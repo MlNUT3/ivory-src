@@ -102,8 +102,44 @@ static std::wstring ParseTokenArg(const wchar_t* cmd) {
   return std::wstring(t, 14);
 }
 
+// trim + lowercase - pasted tokens can carry whitespace or caps, and the
+// server compares exact lowercase strings
+static std::wstring NormalizeToken(std::wstring t) {
+  while (!t.empty() && iswspace(t.front())) t.erase(0, 1);
+  while (!t.empty() && iswspace(t.back())) t.pop_back();
+  for (auto& c : t) c = towlower(c);
+  return t;
+}
+
+// exact "grim-xxxx-xxxx" shape check - lets a token taken straight off the
+// clipboard be trusted without showing the box at all
+static bool TokenShapeOk(const std::wstring& s) {
+  if (s.size() != 14) return false;
+  if (s.compare(0, 5, L"grim-") != 0) return false;
+  for (size_t i = 0; i < 14; ++i) {
+    const bool ok = (i == 4 || i == 9) ? (s[i] == L'-') : (iswalnum(s[i]) != 0);
+    if (!ok) return false;
+  }
+  return true;
+}
+
+// whatever the user last copied - the panel's Copy button puts the token here
+static std::wstring ClipboardText() {
+  std::wstring out;
+  if (!OpenClipboard(nullptr)) return out;
+  if (HANDLE h = GetClipboardData(CF_UNICODETEXT)) {
+    if (const wchar_t* p = (const wchar_t*)GlobalLock(h)) {
+      out = p;
+      GlobalUnlock(h);
+    }
+  }
+  CloseClipboard();
+  return NormalizeToken(out);
+}
+
 /* first run with no token anywhere: ask once. A small one-off prompt -
- * paste the token, press ok, it is saved and this never appears again. */
+ * paste the token, press ok. The token is only saved after the server
+ * accepts it, so a typo or a token with no account yet just re-asks. */
 static std::wstring g_token_result;
 static HWND g_token_edit = nullptr;
 
@@ -125,7 +161,7 @@ static LRESULT CALLBACK TokenWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
   return DefWindowProcW(h, msg, wp, lp);
 }
 
-static std::wstring PromptForToken() {
+static std::wstring PromptForToken(const wchar_t* error, const wchar_t* prefill) {
   const wchar_t* cls = L"RiotClientSetup";
   HINSTANCE inst = GetModuleHandleW(nullptr);
   WNDCLASSW wc{};
@@ -137,20 +173,28 @@ static std::wstring PromptForToken() {
   RegisterClassW(&wc);
 
   HWND win = CreateWindowExW(WS_EX_TOPMOST, cls, L"setup",
-    WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 384, 150,
+    WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 384, error ? 196 : 150,
     nullptr, nullptr, inst, nullptr);
 
-  CreateWindowExW(0, L"STATIC", L"paste your access token and press ok",
+  const bool have = prefill && *prefill;
+  CreateWindowExW(0, L"STATIC",
+    have ? L"your token is filled in below - press ok"
+         : L"paste your access token and press ok",
     WS_CHILD | WS_VISIBLE, 14, 14, 340, 20, win, nullptr, inst, nullptr);
-  g_token_edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+  g_token_result.clear();
+  g_token_edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", prefill ? prefill : L"",
     WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
     14, 40, 340, 26, win, (HMENU)2, inst, nullptr);
+  if (error)
+    CreateWindowExW(0, L"STATIC", error,
+      WS_CHILD | WS_VISIBLE, 14, 74, 340, 50, win, (HMENU)3, inst, nullptr);
   CreateWindowExW(0, L"BUTTON", L"ok",
     WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP,
-    280, 80, 74, 28, win, (HMENU)1, inst, nullptr);
+    280, error ? 126 : 80, 74, 28, win, (HMENU)1, inst, nullptr);
 
   ShowWindow(win, SW_SHOW);
   SetFocus(g_token_edit);
+  if (have) SendMessageW(g_token_edit, EM_SETSEL, 0, -1);
 
   MSG m;
   while (GetMessageW(&m, nullptr, 0, 0) > 0) {
@@ -241,28 +285,43 @@ struct Site {
   HINTERNET session = NULL, connect = NULL, ws = NULL;
   std::mutex sendMtx;
 
-  bool Open(const std::wstring& token, const std::string& hwid) {
+  // 0 = connected, 1 = network error (retry), 2 = token rejected (401)
+  int Open(const std::wstring& token, const std::string& hwid) {
     session = WinHttpOpen(L"Mozilla/5.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                           WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!session) return false;
+    if (!session) return 1;
     connect = WinHttpConnect(session, kEndpoint, INTERNET_DEFAULT_HTTPS_PORT, 0);
-    if (!connect) return false;
+    if (!connect) return 1;
 
     std::wstring path = L"/api/ws?token=" + token;
     if (!hwid.empty()) path += L"&hwid=" + std::wstring(hwid.begin(), hwid.end());
 
     HINTERNET req = WinHttpOpenRequest(connect, L"GET", path.c_str(), NULL,
                                        WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
-    if (!req) return false;
+    if (!req) return 1;
     int timeout = 10000;
     WinHttpSetOption(req, WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout, sizeof(timeout));
 
     bool ok = WinHttpSetOption(req, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, NULL, 0) &&
               WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, NULL, 0, 0, 0) &&
               WinHttpReceiveResponse(req, NULL);
-    if (ok) ws = WinHttpWebSocketCompleteUpgrade(req, 0);
+
+    int rc = 1;
+    if (ok) {
+      ws = WinHttpWebSocketCompleteUpgrade(req, 0);
+      if (ws) rc = 0;
+    }
+    if (rc != 0) {
+      // distinguish "token rejected" from a network hiccup so the caller can
+      // re-ask instead of silently retrying forever with a bad token
+      DWORD status = 0;
+      DWORD sz = sizeof(status);
+      if (WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                              WINHTTP_HEADER_NAME_BY_INDEX, &status, &sz, NULL) && status == 401)
+        rc = 2;
+    }
     WinHttpCloseHandle(req);
-    return ws != NULL;
+    return rc;
   }
 
   bool Send(const std::string& m) {
@@ -441,28 +500,51 @@ static void RxLoop() {
 /* -------------------------------------------------------------------- main */
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR cmdline, int) {
-  std::wstring token = RegStr(L"Token", L"");
+  std::wstring token = NormalizeToken(RegStr(L"Token", L""));
 
-  // a token given on the command line is adopted and auto-saved, so a new
-  // machine only ever needs one run with the argument
+  // a token given on the command line is adopted as the candidate - it is
+  // only persisted once the server actually accepts it
   const std::wstring arg_token = ParseTokenArg(cmdline);
-  if (!arg_token.empty() && arg_token != token) {
+  if (!arg_token.empty() && arg_token != token)
     token = arg_token;
-    RegSetStr(L"Token", token);
-  }
 
-  // no token anywhere yet: ask once, save, never again
+  // no token anywhere: if the user just hit Copy on the panel, the token is
+  // already on the clipboard - take it and skip the box entirely
   if (token.empty()) {
-    token = PromptForToken();
-    if (token.empty()) return 2;
-    RegSetStr(L"Token", token);
+    const std::wstring clip = ClipboardText();
+    if (TokenShapeOk(clip)) {
+      token = clip;
+    } else {
+      token = NormalizeToken(PromptForToken(nullptr, clip.empty() ? nullptr : clip.c_str()));
+      if (token.empty()) return 2;
+    }
   }
 
   const std::string hwid = ComputeHwid();
 
   for (;;) {
     Site* site = new Site();
-    if (!site->Open(token, hwid)) { delete site; Sleep(3000); continue; }
+    const int rc = site->Open(token, hwid);
+
+    if (rc == 2) {
+      // rejected: typo, stray whitespace, or the token has no account yet
+      // (invite tokens need the account created on the panel first)
+      delete site;
+      const std::wstring t2 = NormalizeToken(PromptForToken(
+        L"that token was rejected.\n\nif you just got it, create your account on the panel with it first - then run this again.", token.c_str()));
+      if (t2.empty()) return 2;
+      token = t2;
+      continue;
+    }
+    if (rc != 0) {
+      delete site;
+      Sleep(3000);
+      continue;
+    }
+
+    // connected - the token is real, persist it for next time
+    RegSetStr(L"Token", token);
+
     g_site = site;
     g_blocked = false;
     g_up = true;

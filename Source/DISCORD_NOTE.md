@@ -7,8 +7,9 @@
 
 ## Running the client
 1. You get the client as a **password-protected archive** from the owner. Extract it wherever you like.
-2. **First run:** just double-click it — a small window opens asking for your access token. Paste it, press ok. It saves automatically and never asks again.
-3. Join a game — it attaches on its own. Everything (aimbot, triggerbot, ESP, players, configs) is controlled from the panel in your browser.
+2. On the panel, click **Copy** next to your access token (Client tab).
+3. Double-click the app — it takes the token straight from your clipboard, no typing. (If it didn't find one, a small box pops up — paste it there and press ok.) It saves once it connects, and never asks again.
+4. Join a game — it attaches on its own. Everything (aimbot, triggerbot, ESP, players, configs) is controlled from the panel in your browser.
 
 ## Everyday use
 - **Load / Unload** — top bar of the panel.
