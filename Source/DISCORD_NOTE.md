@@ -7,7 +7,7 @@
 
 ## Running the client
 1. You get the client as a **password-protected archive** from the owner. Extract it wherever you like.
-2. **First run only:** launch it with your token as the argument (easiest: make a shortcut, then edit the target to `...exe grim-xxxx-xxxx`). It saves automatically — after that you just double-click.
+2. **First run:** just double-click it — a small window opens asking for your access token. Paste it, press ok. It saves automatically and never asks again.
 3. Join a game — it attaches on its own. Everything (aimbot, triggerbot, ESP, players, configs) is controlled from the panel in your browser.
 
 ## Everyday use

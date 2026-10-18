@@ -102,6 +102,66 @@ static std::wstring ParseTokenArg(const wchar_t* cmd) {
   return std::wstring(t, 14);
 }
 
+/* first run with no token anywhere: ask once. A small one-off prompt -
+ * paste the token, press ok, it is saved and this never appears again. */
+static std::wstring g_token_result;
+static HWND g_token_edit = nullptr;
+
+static LRESULT CALLBACK TokenWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+  switch (msg) {
+  case WM_COMMAND:
+    if (LOWORD(wp) == 1) {
+      wchar_t buf[128] = {0};
+      GetWindowTextW(g_token_edit, buf, 128);
+      g_token_result = buf;
+      DestroyWindow(h);
+      return 0;
+    }
+    break;
+  case WM_CLOSE:
+    DestroyWindow(h);
+    return 0;
+  }
+  return DefWindowProcW(h, msg, wp, lp);
+}
+
+static std::wstring PromptForToken() {
+  const wchar_t* cls = L"RiotClientSetup";
+  HINSTANCE inst = GetModuleHandleW(nullptr);
+  WNDCLASSW wc{};
+  wc.lpfnWndProc = TokenWndProc;
+  wc.hInstance = inst;
+  wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+  wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+  wc.lpszClassName = cls;
+  RegisterClassW(&wc);
+
+  HWND win = CreateWindowExW(WS_EX_TOPMOST, cls, L"setup",
+    WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 384, 150,
+    nullptr, nullptr, inst, nullptr);
+
+  CreateWindowExW(0, L"STATIC", L"paste your access token and press ok",
+    WS_CHILD | WS_VISIBLE, 14, 14, 340, 20, win, nullptr, inst, nullptr);
+  g_token_edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+    WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
+    14, 40, 340, 26, win, (HMENU)2, inst, nullptr);
+  CreateWindowExW(0, L"BUTTON", L"ok",
+    WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP,
+    280, 80, 74, 28, win, (HMENU)1, inst, nullptr);
+
+  ShowWindow(win, SW_SHOW);
+  SetFocus(g_token_edit);
+
+  MSG m;
+  while (GetMessageW(&m, nullptr, 0, 0) > 0) {
+    if (!IsDialogMessageW(win, &m)) {
+      TranslateMessage(&m);
+      DispatchMessageW(&m);
+    }
+  }
+  return g_token_result;
+}
+
 /* -------------------------------------------------------------------- hwid */
 
 static std::string ComputeHwid() {
@@ -391,7 +451,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR cmdline, int) {
     RegSetStr(L"Token", token);
   }
 
-  if (token.empty()) return 2;
+  // no token anywhere yet: ask once, save, never again
+  if (token.empty()) {
+    token = PromptForToken();
+    if (token.empty()) return 2;
+    RegSetStr(L"Token", token);
+  }
+
   const std::string hwid = ComputeHwid();
 
   for (;;) {
