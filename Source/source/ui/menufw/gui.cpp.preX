@@ -1,0 +1,997 @@
+﻿#include "headers/includes.h"
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <thread>
+#include <mutex>
+#include <crypto/xorstr.h>
+#include "data/IconsFontAwesome6.h"
+#include "data/IconsV2_Defines.h"
+#include "widgets/watermark.h"
+#include "widgets/keybinds.h"
+#include "widgets/playerbar.h"
+
+#include "widgets/playerlist.h"
+#include "widgets/musicplayer.h"
+#include "deezer/deezer.h"
+
+#include "data/images.h"
+
+// ============================================================================
+// real feature settings (Ivory)
+// ============================================================================
+#include "features/system/settings/settings.h"
+
+#include "features/system/settings/settings.h"
+#include <features/system/notifications/notifications.h>
+#include <core/system/eject.h>
+#include <features/system/config/config.h>
+#include <sdk/cache/core/cache.h>
+#include <features/system/playertools/avatars.h>
+#include <features/system/playertools/playerops.h>
+
+static const char* k_aim_modes[]    = { "humanized", "normal", "blatant" };
+static const char* k_mouse_modes[]  = { "mouse", "camera" };
+static const char* k_activate[]     = { "hold", "toggle", "always" };
+static const char* k_target_parts[] = { "head", "torso", "humanoidrootpart", "left arm", "right arm", "left leg", "right leg", "closest part", "nearest" };
+static const char* k_trig_methods[] = { "normal", "mesh" };
+static const char* k_box_types[]    = { "corner", "full", "3d" };
+static const char* k_name_modes[]   = { "display name", "username", "both" };
+static const char* k_name_pos[]     = { "top", "bottom", "left", "right" };
+static const char* k_hp_styles[]    = { "left", "right", "top", "bottom" };
+static const char* k_tracer_origins[] = { "bottom", "top", "center", "mouse" };
+static const char* k_head_types[]   = { "dot", "hexagon" };
+static const char* k_gradient_types[] = { "vertical", "horizontal", "pulse" };
+static const char* k_name_positions[] = { "top", "bottom", "left", "right" };
+static const char* k_text_transforms[] = { "none", "uppercase", "lowercase" };
+static const char* k_theme_names[]  = { "midnight", "dracula", "nord", "catppuccin mocha", "mac light" };
+
+struct SettingRow
+{
+    int         type;        // see row types below
+    const char* label;
+    void*       ptr;         // primary value
+    void*       ptr2;        // secondary (keybind mode)
+    float       mn, mx;
+    const char* const* items;
+    int         items_count;
+    int         cond;        // visibility condition (see below)
+};
+
+enum : int
+{
+    ROW_CHECK = 0,
+    ROW_SLIDER_I,
+    ROW_SLIDER_F,
+    ROW_COMBO,
+    ROW_COLOR,
+    ROW_KEYBIND,
+    ROW_INFO,
+    ROW_BUTTON,
+    ROW_INPUT,   // single-line text input bound to a char buffer (ptr)
+    ROW_CONFIGLIST, // clickable list of the configs currently in memory
+};
+
+// row visibility conditions (evaluated against aim_mode at render time)
+enum : int
+{
+    COND_ALWAYS = 0,
+    COND_NOT_BLATANT,   // hidden in blatant mode
+    COND_HUMANIZED,     // only in humanized mode
+    COND_BLATANT,       // only in blatant mode
+    COND_BOOL,          // visible while *(bool*)ptr2 is true
+};
+
+#define R_CHECK(label, ptr)          { ROW_CHECK,    label, (void*)(ptr), nullptr, 0, 0, nullptr, 0, COND_ALWAYS }
+#define R_SLIDER_I(label, ptr, mn, mx) { ROW_SLIDER_I, label, (void*)(ptr), nullptr, (float)(mn), (float)(mx), nullptr, 0, COND_ALWAYS }
+#define R_SLIDER_F(label, ptr, mn, mx) { ROW_SLIDER_F, label, (void*)(ptr), nullptr, mn, mx, nullptr, 0, COND_ALWAYS }
+#define R_COMBO(label, ptr, items_)   { ROW_COMBO,   label, (void*)(ptr), nullptr, 0, 0, items_, (int)(sizeof(items_)/sizeof(items_[0])), COND_ALWAYS }
+#define R_COLOR(label, ptr)          { ROW_COLOR,    label, (void*)(ptr), nullptr, 0, 0, nullptr, 0, COND_ALWAYS }
+#define R_KEYBIND(label, key, mode)  { ROW_KEYBIND,  label, (void*)(key), (void*)(mode), 0, 0, nullptr, 0, COND_ALWAYS }
+#define R_INFO(text)                  { ROW_INFO,     text,  nullptr, nullptr, 0, 0, nullptr, 0, COND_ALWAYS }
+#define R_BUTTON(label, fn)           { ROW_BUTTON,   label, nullptr, (void*)(fn), 0, 0, nullptr, 0, COND_ALWAYS }
+// bool-gated variants (ptr2 = pointer to the enabling bool)
+#define R_CHECK_B(label, ptr, gate)        { ROW_CHECK,    label, (void*)(ptr), (void*)(gate), 0, 0, nullptr, 0, COND_BOOL }
+#define R_SLIDER_I_B(label, ptr, mn, mx, gate) { ROW_SLIDER_I, label, (void*)(ptr), (void*)(gate), (float)(mn), (float)(mx), nullptr, 0, COND_BOOL }
+#define R_SLIDER_F_B(label, ptr, mn, mx, gate) { ROW_SLIDER_F, label, (void*)(ptr), (void*)(gate), mn, mx, nullptr, 0, COND_BOOL }
+#define R_COMBO_B(label, ptr, items_, gate)    { ROW_COMBO,   label, (void*)(ptr), (void*)(gate), 0, 0, items_, (int)(sizeof(items_)/sizeof(items_[0])), COND_BOOL }
+// conditional variants (visibility depends on aim_mode)
+#define R_CHECK_NB(label, ptr)        { ROW_CHECK,    label, (void*)(ptr), nullptr, 0, 0, nullptr, 0, COND_NOT_BLATANT }
+#define R_CHECK_HUM(label, ptr)       { ROW_CHECK,    label, (void*)(ptr), nullptr, 0, 0, nullptr, 0, COND_HUMANIZED }
+#define R_SLIDER_I_HUM(label, ptr, mn, mx) { ROW_SLIDER_I, label, (void*)(ptr), nullptr, (float)(mn), (float)(mx), nullptr, 0, COND_HUMANIZED }
+#define R_SLIDER_F_NB(label, ptr, mn, mx) { ROW_SLIDER_F, label, (void*)(ptr), nullptr, mn, mx, nullptr, 0, COND_NOT_BLATANT }
+#define R_SLIDER_F_HUM(label, ptr, mn, mx) { ROW_SLIDER_F, label, (void*)(ptr), nullptr, mn, mx, nullptr, 0, COND_HUMANIZED }
+#define R_INPUT(label, bufptr)            { ROW_INPUT,    label, (void*)(bufptr), nullptr, 0, 0, nullptr, 0, COND_ALWAYS }
+#define R_CONFIGLIST()                    { ROW_CONFIGLIST, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, COND_ALWAYS }
+#define R_INFO_B(text)                { ROW_INFO,     text,  nullptr, nullptr, 0, 0, nullptr, 0, COND_BLATANT }
+
+// ============================================================================
+// ui state + config actions
+// ============================================================================
+static int g_cfg_slot = 0;
+// memory-config UI state - the name buffer feeds the ROW_INPUT field
+static char g_cfg_name[64] = {};
+static char g_cloud_id[64] = {};
+static std::chrono::steady_clock::time_point g_sd_armed{};
+static bool g_sd_armed_active = false;
+
+// cloud slots: worker threads never touch ui or settings - they only fill
+// these, and the render loop drains/applies/notifies below
+struct CloudSlot { bool busy = false; bool ready = false; bool ok = false; std::string text; };
+static CloudSlot g_cloud_share;
+static CloudSlot g_cloud_fetch;
+static std::mutex g_cloud_mu;
+
+static void cfg_act_newname() {
+    static const char hex[] = "0123456789ABCDEF";
+    std::string n;
+    for (int i = 0; i < 12; i++) n += hex[rand() % 16];
+    strncpy_s(g_cfg_name, n.c_str(), sizeof(g_cfg_name) - 1);
+}
+static void cfg_act_save() {
+    std::string name = g_cfg_name;
+    if (name.empty()) { notifications::add("type a config name first"); return; }
+    if (config::save_config_mem(name))
+        notifications::add("config saved to memory");
+    else
+        notifications::add("config save failed");
+}
+static void cfg_act_load() {
+    std::string name = g_cfg_name;
+    if (name.empty()) { notifications::add("type a config name first"); return; }
+    if (config::load_config_mem(name))
+        notifications::add("config loaded");
+    else
+        notifications::add("no config with that name");
+}
+static void cfg_act_delete() {
+    std::string name = g_cfg_name;
+    if (name.empty()) { notifications::add("type a config name first"); return; }
+    if (config::delete_config_mem(name))
+    {
+        SecureZeroMemory(&name[0], name.size());
+        notifications::add("config deleted from memory");
+    }
+    else
+        notifications::add("no config with that name");
+}
+static void cfg_act_export() {
+    if (config::export_config_to_clipboard())
+        notifications::add("config exported to clipboard");
+    else
+        notifications::add("export failed");
+}
+static void cfg_act_insert() {
+    if (config::import_config_from_clipboard())
+        notifications::add("config inserted from clipboard");
+    else
+        notifications::add("insert failed (no config in clipboard?)");
+}
+static void cfg_act_cloud_share() {
+    std::lock_guard<std::mutex> lk(g_cloud_mu);
+    if (g_cloud_share.busy) { notifications::add("upload already running"); return; }
+    g_cloud_share.busy = true;
+    g_cloud_share.ready = false;
+    g_cloud_share.text.clear();
+    notifications::add("uploading config...");
+    std::thread([] {
+        std::string url;
+        const bool ok = config::share_config_cloud(url);
+        std::lock_guard<std::mutex> lk(g_cloud_mu);
+        g_cloud_share.ok = ok;
+        g_cloud_share.text = url;
+        g_cloud_share.ready = true;
+        g_cloud_share.busy = false;
+    }).detach();
+}
+static void cfg_act_cloud_fetch() {
+    std::string id = g_cloud_id;
+    if (id.empty()) { notifications::add("paste a paste id first"); return; }
+    std::lock_guard<std::mutex> lk(g_cloud_mu);
+    if (g_cloud_fetch.busy) { notifications::add("fetch already running"); return; }
+    g_cloud_fetch.busy = true;
+    g_cloud_fetch.ready = false;
+    g_cloud_fetch.text.clear();
+    notifications::add("fetching config...");
+    std::thread([id] {
+        std::string body;
+        const bool ok = config::fetch_config_cloud_body(id, body);
+        std::lock_guard<std::mutex> lk(g_cloud_mu);
+        g_cloud_fetch.ok = ok;
+        g_cloud_fetch.text = body;
+        g_cloud_fetch.ready = true;
+        g_cloud_fetch.busy = false;
+    }).detach();
+}
+static void cfg_act_selfdestruct() {
+    // two-stage: first press arms, second press within 8s confirms
+    const auto now = std::chrono::steady_clock::now();
+    if (!g_sd_armed_active || (now - g_sd_armed) > std::chrono::seconds(8))
+    {
+        g_sd_armed_active = true;
+        g_sd_armed = now;
+        notifications::add("press self destruct again to confirm");
+        return;
+    }
+    g_sd_armed_active = false;
+    notifications::add("wiping...");
+    Sleep(150); // let the notification render before everything dies
+    sys_eject::self_destruct();
+}
+static void cfg_act_reset() {
+    config::reset_to_defaults();
+    notifications::add("settings reset to defaults");
+}
+
+// ============================================================================
+// per-tab settings rows
+// ============================================================================
+static const char* k_sections_tab0[] = { "aim", "targeting", "triggerbot", "recoil", "humanize", "prediction", "speed cap" };
+static const char* k_sections_tab1[] = { "esp", "overlays", "filters", "highlights" };
+static const char* k_sections_tab2[] = { "interface", "configs" };
+static const char* k_sections_tab3[] = { "players" };
+static const char* k_sections_tab4[] = { "colors" };
+
+static const SettingRow k_rows_tab0_0[] = {
+    R_CHECK("enabled", &settings::aimbot::enabled),
+    R_COMBO("aim mode", &settings::aimbot::aim_mode, k_aim_modes),
+    R_COMBO("aim at", &settings::aimbot::mode, k_mouse_modes),
+    R_KEYBIND("aim key", &settings::aimbot::keybind, &settings::aimbot::activation_mode),
+    R_COMBO("activation", &settings::aimbot::activation_mode, k_activate),
+    R_CHECK("use fov", &settings::aimbot::use_fov),
+    R_SLIDER_F_B("fov", &settings::aimbot::fov, 0.f, 600.f, &settings::aimbot::use_fov),
+    R_CHECK_B("dynamic fov", &settings::aimbot::dynamic_fov, &settings::aimbot::use_fov),
+    R_SLIDER_F("deadzone", &settings::aimbot::aim_deadzone, 0.f, 100.f),
+    R_CHECK_B("draw fov circle", &settings::aimbot::draw_fov, &settings::aimbot::use_fov),
+    R_COLOR("fov colour", settings::aimbot::fov_circle_colour),
+    R_SLIDER_F_NB("aim speed", &settings::aimbot::aim_speed_x, 0.01f, 1.0f),
+    R_SLIDER_F_NB("aim speed x", &settings::aimbot::aim_speed_x, 0.01f, 1.0f),
+    R_SLIDER_F_NB("aim speed y", &settings::aimbot::aim_speed_y, 0.01f, 1.0f),
+    R_SLIDER_F("mouse sensitivity", &settings::aimbot::mouse_sensitivity, 0.1f, 5.0f),
+    R_SLIDER_F("camera smoothing", &settings::aimbot::mouse_look, 0.1f, 5.0f),
+    R_INFO_B("1:1 lock - full snap, no smoothing."),
+};
+static const SettingRow k_rows_tab0_1[] = {
+    R_CHECK("visible only", &settings::aimbot::visible_check),
+    R_CHECK("visual check", &settings::visuals::visual_check),
+    R_CHECK("team check", &settings::aimbot::teamcheck),
+    R_CHECK("knock check", &settings::aimbot::knock_check),
+    R_CHECK("ping interpolation", &settings::aimbot::ping_interpolation),
+    R_CHECK("sticky aim", &settings::aimbot::sticky_aim),
+    R_CHECK("disable on kill", &settings::aimbot::disable_on_kill),
+    R_CHECK("health check", &settings::aimbot::health_check_enabled),
+    R_SLIDER_F_B("min health", &settings::aimbot::min_health, 0.f, 100.f, &settings::aimbot::health_check_enabled),
+    R_COMBO("target part", &settings::aimbot::target_parts, k_target_parts),
+    R_COMBO("air target part", &settings::aimbot::air_parts, k_target_parts),
+    R_SLIDER_I("point amount", &settings::aimbot::point_amount, 1, 6),
+};
+static const SettingRow k_rows_tab0_2[] = {
+    R_CHECK("triggerbot", &settings::triggerbot::enabled),
+    R_KEYBIND("trigger key", &settings::triggerbot::keybind, &settings::triggerbot::activation_mode),
+    R_COMBO("activation", &settings::triggerbot::activation_mode, k_activate),
+    R_COMBO("method", &settings::triggerbot::method, k_trig_methods),
+    R_SLIDER_F("threshold", &settings::triggerbot::threshold, 1.f, 100.f),
+    R_SLIDER_I("delay", &settings::triggerbot::delay, 1, 50),
+    R_SLIDER_F("cooldown (ms)", &settings::triggerbot::cooldown_ms, 0.f, 1000.f),
+    R_CHECK("team check", &settings::triggerbot::teamcheck),
+    R_CHECK("knock check", &settings::triggerbot::knock_check),
+    R_CHECK("gun check", &settings::triggerbot::guncheck),
+    R_CHECK("visible check", &settings::triggerbot::visible_check),
+    R_CHECK("visual check", &settings::visuals::visual_check),
+    R_CHECK("draw fov circle", &settings::triggerbot::draw_fov),
+    R_COLOR("fov colour", settings::triggerbot::fov_circle_colour),
+    R_CHECK("fill fov", &settings::triggerbot::fill_fov),
+    R_COLOR("fill colour", settings::triggerbot::fov_fill_colour),
+};
+static const SettingRow k_rows_tab0_3[] = {
+    R_CHECK("recoil control", &settings::aimbot::recoil_control),
+    R_SLIDER_F("recoil strength", &settings::aimbot::recoil_control_strength, 0.0f, 3.0f),
+};
+static const SettingRow k_rows_tab0_4[] = {
+    R_CHECK("humanize", &settings::aimbot::humanize),
+    R_SLIDER_F_HUM("jitter", &settings::aimbot::human_jitter, 0.f, 10.f),
+    R_SLIDER_I_HUM("lock delay", &settings::aimbot::lock_delay, 1, 50),
+    R_SLIDER_F_HUM("overshoot", &settings::aimbot::overshoot, 0.f, 30.f),
+    R_SLIDER_F_HUM("path wobble", &settings::aimbot::path_wobble, 0.f, 10.f),
+    R_SLIDER_F_HUM("miss %", &settings::aimbot::miss_chance, 0.f, 50.f),
+    R_CHECK_HUM("aim motion", &settings::aimbot::aim_motion),
+    R_SLIDER_F_HUM("motion speed", &settings::aimbot::aim_motion_speed, 0.1f, 10.0f),
+    R_SLIDER_F_HUM("motion intensity", &settings::aimbot::aim_motion_intensity, 0.0f, 20.0f),
+    R_CHECK_HUM("stick assist", &settings::aimbot::stick_assist),
+    R_SLIDER_F_HUM("stick strength", &settings::aimbot::stick_strength, 0.01f, 1.0f),
+    R_CHECK_HUM("fatigue", &settings::aimbot::fatigue),
+    R_SLIDER_F_HUM("fatigue rate", &settings::aimbot::fatigue_rate, 0.f, 1.f),
+    R_SLIDER_F_HUM("fatigue decay", &settings::aimbot::fatigue_decay, 0.f, 2.f),
+    R_SLIDER_F_HUM("fatigue move", &settings::aimbot::fatigue_move, 0.f, 10.f),
+    R_SLIDER_F_HUM("fatigue offset", &settings::aimbot::fatigue_offset, 0.f, 5.f),
+    R_CHECK_HUM("assist slowdown", &settings::aimbot::assist_slowdown),
+    R_SLIDER_F_HUM("slowdown speed", &settings::aimbot::assist_slowdown_speed, 50.f, 600.f),
+    R_SLIDER_F_HUM("slowdown strength", &settings::aimbot::assist_slowdown_strength, 0.f, 1.f),
+    R_CHECK_HUM("shake", &settings::aimbot::shake),
+    R_SLIDER_F_HUM("shake value", &settings::aimbot::shake_value, 0.f, 15.f),
+    R_SLIDER_F_HUM("shake z", &settings::aimbot::shake_z, 0.f, 15.f),
+    R_CHECK_HUM("offset enabled", &settings::aimbot::offset_enabled),
+    R_SLIDER_F_HUM("offset x", &settings::aimbot::offset_x, -50.f, 50.f),
+    R_SLIDER_F_HUM("offset y", &settings::aimbot::offset_y, -50.f, 50.f),
+};
+static const SettingRow k_rows_tab0_5[] = {
+    R_CHECK("enable prediction", &settings::aimbot::enable_prediction),
+    R_SLIDER_F("prediction x", &settings::aimbot::prediction_x, 0.f, 30.f),
+    R_SLIDER_F("prediction y", &settings::aimbot::prediction_y, 0.f, 30.f),
+    R_CHECK("jump prediction", &settings::aimbot::jump_prediction),
+    R_SLIDER_F("jump value", &settings::aimbot::jump_prediction_value, 0.f, 30.f),
+    R_CHECK("fall prediction", &settings::aimbot::fall_prediction),
+    R_SLIDER_F("fall value", &settings::aimbot::fall_prediction_value, 0.f, 30.f),
+    R_SLIDER_F("velocity multiplier", &settings::aimbot::velocity_multiplier, 0.f, 3.f),
+    R_CHECK("air prediction", &settings::aimbot::air_prediction_enabled),
+    R_SLIDER_F("air x", &settings::aimbot::air_prediction_x, 0.f, 30.f),
+    R_SLIDER_F("air y", &settings::aimbot::air_prediction_y, 0.f, 30.f),
+    R_SLIDER_F("prediction range", &settings::aimbot::prediction_range, 50.f, 1000.f),
+    R_CHECK("adaptive prediction", &settings::aimbot::adaptive_prediction),
+    R_SLIDER_F("adapt strength", &settings::aimbot::adapt_strength, 0.f, 3.f),
+    R_SLIDER_F("adapt speed", &settings::aimbot::adapt_speed, 1.f, 100.f),
+    R_CHECK("prediction dot", &settings::aimbot::prediction_dot),
+    R_COLOR("dot colour", settings::aimbot::prediction_color),
+    R_SLIDER_F("dot size", &settings::aimbot::prediction_size, 1.f, 15.f),
+};
+static const SettingRow k_rows_tab0_6[] = {
+    R_CHECK("speed cap", &settings::aimbot::speed_cap),
+    R_SLIDER_F("max speed", &settings::aimbot::max_speed_px, 10.f, 500.f),
+    R_SLIDER_F("min speed", &settings::aimbot::min_speed_px, 0.f, 20.f),
+    R_INFO("caps per-tick aim travel so fast flicks stay human."),
+};
+static const SettingRow k_rows_tab1_0[] = {
+    R_CHECK("box", &settings::visuals::hostile.box),
+    R_COMBO("box type", &settings::visuals::hostile.box_type, k_box_types),
+    R_CHECK("box fill", &settings::visuals::hostile.box_fill),
+    R_CHECK("username", &settings::visuals::hostile.username),
+    R_COMBO("username type", &settings::visuals::hostile.username_type, k_name_modes),
+    R_COMBO("username position", &settings::visuals::hostile.username_position, k_name_pos),
+    R_COMBO("name transform", &settings::visuals::hostile.name_transform, k_text_transforms),
+    R_CHECK("distance", &settings::visuals::hostile.distance),
+    R_CHECK("held tool", &settings::visuals::hostile.tool),
+    R_CHECK("healthbar", &settings::visuals::hostile.healthbar),
+    R_COMBO("healthbar style", &settings::visuals::hostile.healthbar_style, k_hp_styles),
+    R_CHECK("healthbar text", &settings::visuals::hostile.healthbar_text),
+    R_CHECK("tracers", &settings::visuals::hostile.tracers),
+    R_COMBO("tracer origin", &settings::visuals::hostile.tracers_origin, k_tracer_origins),
+    R_SLIDER_F("tracer thickness", &settings::visuals::hostile.tracers_thickness, 0.5f, 5.f),
+    R_CHECK("skeleton", &settings::visuals::hostile.skeleton),
+    R_CHECK("head dot", &settings::visuals::hostile.head_dot),
+    R_COMBO("head type", &settings::visuals::hostile.head_type, k_head_types),
+    R_SLIDER_F("head size", &settings::visuals::hostile.head_dot_size, 1.f, 12.f),
+    R_CHECK("offscreen arrows", &settings::visuals::hostile.offscreen_arrows),
+    R_SLIDER_F("arrow size", &settings::visuals::hostile.offscreen_arrows_size, 5.f, 30.f),
+    R_SLIDER_F("arrow radius", &settings::visuals::hostile.offscreen_arrows_radius, 50.f, 400.f),
+    R_CHECK("corpse", &settings::visuals::hostile.corpse),
+};
+static const SettingRow k_rows_tab1_1[] = {
+    R_CHECK("box gradient", &settings::visuals::hostile.box_gradient),
+    R_COMBO("gradient type", &settings::visuals::hostile.box_gradient_type, k_gradient_types),
+    R_SLIDER_F("gradient pulse", &settings::visuals::hostile.box_pulse_speed, 0.f, 5.f),
+    R_CHECK("fill gradient", &settings::visuals::hostile.box_fill_gradient),
+    R_SLIDER_F("fill pulse", &settings::visuals::hostile.box_fill_pulse_speed, 0.f, 5.f),
+    R_COLOR("fill colour", settings::visuals::hostile.box_fill_colour),
+    R_COLOR("fill mid", settings::visuals::hostile.box_fill_colour_mid),
+    R_COLOR("fill low", settings::visuals::hostile.box_fill_colour_low),
+    R_CHECK("username gradient", &settings::visuals::hostile.username_gradient),
+    R_COMBO("username gradient type", &settings::visuals::hostile.username_gradient_type, k_gradient_types),
+    R_SLIDER_F("username gradient speed", &settings::visuals::hostile.username_gradient_speed, 0.f, 10.f),
+    R_COLOR("username second colour", settings::visuals::hostile.username_colour_two),
+    R_COMBO("healthbar gradient", &settings::visuals::hostile.healthbar_gradient_type, k_gradient_types),
+    R_SLIDER_F("healthbar pulse", &settings::visuals::hostile.healthbar_pulse_speed, 0.f, 5.f),
+    R_CHECK("chams", &settings::visuals::hostile.chams),
+    R_CHECK("chams fade", &settings::visuals::hostile.chams_fade),
+    R_SLIDER_F("fade speed", &settings::visuals::hostile.chams_fade_speed, 0.f, 5.f),
+    R_CHECK("chams corpse", &settings::visuals::hostile.chams_corpse),
+    R_CHECK("corpse names", &settings::visuals::hostile.corpse_names),
+    R_CHECK("movement trails", &settings::visuals::hostile.movement_trails),
+    R_SLIDER_F("trails thickness", &settings::visuals::hostile.movement_trails_thickness, 0.5f, 5.f),
+    R_SLIDER_F("trails length", &settings::visuals::hostile.movement_trails_length, 0.1f, 5.f),
+    R_CHECK("view angle lines", &settings::visuals::hostile.view_angle_lines),
+    R_SLIDER_F("lines thickness", &settings::visuals::hostile.view_angle_lines_thickness, 0.5f, 5.f),
+    R_SLIDER_F("lines length", &settings::visuals::hostile.view_angle_lines_length, 1.f, 30.f),
+};
+static const SettingRow k_rows_tab1_2[] = {
+    R_CHECK("team check", &settings::visuals::teamcheck),
+    R_CHECK("visible check", &settings::visuals::visible_check),
+    R_CHECK("visual check", &settings::visuals::visual_check),
+    R_SLIDER_F("visual radius", &settings::visuals::visual_radius, 100.f, 2000.f),
+    R_SLIDER_F("visual refresh", &settings::visuals::visual_refresh_ms, 50.f, 1000.f),
+    R_CHECK("knock check", &settings::visuals::knock_check),
+    R_CHECK("alive check", &settings::visuals::alive_check),
+    R_CHECK("ragdoll check", &settings::visuals::ragdoll_check),
+    R_CHECK("distance limit", &settings::visuals::distance_check),
+    R_SLIDER_F("max distance", &settings::visuals::max_distance, 50.f, 5000.f),
+    R_SLIDER_F("esp font size", &settings::visuals::esp_font_size, 8.f, 24.f),
+};
+static const SettingRow k_rows_tab1_3[] = {
+    R_CHECK("enemy highlight", &settings::visuals::enemy_highlight),
+    R_COLOR("enemy colour", settings::visuals::enemy_highlight_colour),
+    R_CHECK("friendly highlight", &settings::visuals::friendly_highlight),
+    R_COLOR("friendly colour", settings::visuals::friendly_highlight_colour),
+};
+static const SettingRow k_rows_tab2_0[] = {
+    R_CHECK("keybind list", &settings::misc::keybind_list),
+    R_CHECK("watermark", &settings::misc::watermark),
+    R_CHECK("v-sync", &settings::vsync),
+    R_CHECK("streamproof", &settings::streamproof),
+    R_CHECK("cursor in recordings", &settings::stealth::cursor_in_capture),
+    R_COMBO("theme", &settings::misc::theme_index, k_theme_names),
+};
+static const SettingRow k_rows_tab2_1[] = {
+    R_INPUT("##cfgname", (void*)g_cfg_name),
+    R_BUTTON("load", cfg_act_load),
+    R_BUTTON("save", cfg_act_save),
+    R_BUTTON("delete", cfg_act_delete),
+    R_BUTTON("new name", cfg_act_newname),
+    R_BUTTON("export", cfg_act_export),
+    R_BUTTON("insert", cfg_act_insert),
+    R_BUTTON("share", cfg_act_cloud_share),
+    R_INPUT("##pasteid", (void*)g_cloud_id),
+    R_BUTTON("fetch", cfg_act_cloud_fetch),
+    R_CONFIGLIST(),
+    R_BUTTON("self destruct", cfg_act_selfdestruct),
+    R_BUTTON("reset", cfg_act_reset),
+    R_INFO("configs live in memory + registry - never on disk."),
+};
+
+static const SettingRow* const k_rows_tab0[] = { k_rows_tab0_0, k_rows_tab0_1, k_rows_tab0_2, k_rows_tab0_3, k_rows_tab0_4, k_rows_tab0_5, k_rows_tab0_6 };
+static const SettingRow* const k_rows_tab1[] = { k_rows_tab1_0, k_rows_tab1_1, k_rows_tab1_2, k_rows_tab1_3 };
+static const SettingRow* const k_rows_tab2[] = { k_rows_tab2_0, k_rows_tab2_1 };
+
+static const char* k_section_names[5][8] = {
+    { "aim", "targeting", "triggerbot", "recoil", "humanize", "prediction", "speed cap", nullptr },
+    { "esp", "overlays", "filters", "highlights", nullptr, nullptr, nullptr, nullptr },
+    { "interface", "configs", nullptr, nullptr, nullptr, nullptr, nullptr, nullptr },
+    { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr },
+    { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr },
+};
+static const int k_section_counts[5] = { 7, 4, 2, 0, 0 };
+
+static const SettingRow* const k_settings_rows[5][8] = {
+    { k_rows_tab0_0, k_rows_tab0_1, k_rows_tab0_2, k_rows_tab0_3, k_rows_tab0_4, k_rows_tab0_5, k_rows_tab0_6, nullptr },
+    { k_rows_tab1_0, k_rows_tab1_1, k_rows_tab1_2, k_rows_tab1_3, nullptr, nullptr, nullptr, nullptr },
+    { k_rows_tab2_0, k_rows_tab2_1, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr },
+    { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr },
+    { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr },
+};
+static const int k_settings_row_counts[5][8] = {
+    { 17, 12, 16, 2, 25, 18, 4, 0 },
+    { 23, 25, 11, 4, 0, 0, 0, 0 },
+    { 6, 14, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0, 0 },
+};
+
+static const char* tab_names[] = { "aimbot", "visuals", "system", "players" };
+static const char* tab_icons[] = {
+    "\xEF\x80\x98",
+    "\xEF\x81\x8B",
+    "\xEF\x80\x8C",
+    "\xEF\x80\x87",
+};
+
+static const char* child_titles[5][8] = {
+    { "aim", "targeting", "triggerbot", "recoil", "humanize", "prediction", "speed cap", nullptr },
+    { "esp", "overlays", "filters", "highlights", nullptr, nullptr, nullptr, nullptr },
+    { "interface", "configs", nullptr, nullptr, nullptr, nullptr, nullptr, nullptr },
+    { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr },
+    { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr },
+};
+
+// ============================================================================
+// row rendering
+// ============================================================================
+static int* g_listen_key = nullptr;
+
+static const char* vk_name(int vk) {
+    switch (vk) {
+        case 0: return "none";
+        case VK_LBUTTON: return "mouse1";
+        case VK_RBUTTON: return "mouse2";
+        case VK_MBUTTON: return "mouse3";
+        case VK_XBUTTON1: return "mouse4";
+        case VK_XBUTTON2: return "mouse5";
+        case VK_SHIFT: return "shift";
+        case VK_CONTROL: return "ctrl";
+        case VK_MENU: return "alt";
+        case VK_CAPITAL: return "caps";
+        case VK_SPACE: return "space";
+        case VK_INSERT: return "insert";
+        case VK_DELETE: return "delete";
+        case VK_HOME: return "home";
+        case VK_END: return "end";
+        default: break;
+    }
+    static char buf[32];
+    if (vk >= 0x30 && vk <= 0x39) { buf[0] = (char)vk; buf[1] = 0; return buf; }
+    if (vk >= 0x41 && vk <= 0x5A) { buf[0] = (char)vk; buf[1] = 0; return buf; }
+    if (vk >= VK_F1 && vk <= VK_F24) { sprintf_s(buf, "f%d", vk - VK_F1 + 1); return buf; }
+    sprintf_s(buf, "vk%d", vk);
+    return buf;
+}
+
+static bool row_visible(const SettingRow& r) {
+    const int aim_mode = settings::aimbot::aim_mode;
+    switch (r.cond) {
+        case COND_NOT_BLATANT: return aim_mode != 2;
+        case COND_HUMANIZED:   return aim_mode == 0;
+        case COND_BLATANT:     return aim_mode == 2;
+        case COND_BOOL:        return r.ptr2 && *(bool*)r.ptr2;
+        default:               return true;
+    }
+}
+
+static void poll_keybind_listen() {
+    if (!g_listen_key) return;
+    // esc cancels, everything else binds (first pressed wins)
+    if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) { g_listen_key = nullptr; return; }
+    for (int vk = 8; vk <= 254; vk++) {
+        if (vk == VK_ESCAPE) continue;
+        if (GetAsyncKeyState(vk) & 0x8000) {
+            *g_listen_key = vk;
+            g_listen_key = nullptr;
+            return;
+        }
+    }
+}
+
+static void render_row(const SettingRow& r) {
+    if (!row_visible(r)) return;
+    switch (r.type) {
+        case ROW_CHECK:
+            widgets->checkbox(r.label, (bool*)r.ptr);
+            break;
+        case ROW_SLIDER_I:
+            widgets->slider_int(r.label, (int*)r.ptr, (int)r.mn, (int)r.mx);
+            break;
+        case ROW_SLIDER_F:
+            widgets->slider_float(r.label, (float*)r.ptr, r.mn, r.mx);
+            break;
+        case ROW_COMBO:
+            widgets->dropdown(r.label, (int*)r.ptr, (const char**)r.items, r.items_count);
+            break;
+        case ROW_COLOR:
+            widgets->color_picker(r.label, (float*)r.ptr);
+            break;
+        case ROW_KEYBIND: {
+            int* key = (int*)r.ptr;
+            char buf[128];
+            if (g_listen_key == key)
+                sprintf_s(buf, "%s [...] ", r.label);
+            else
+                sprintf_s(buf, "%s [%s] ", r.label, vk_name(*key));
+            if (widgets->button(buf))
+                g_listen_key = (g_listen_key == key) ? nullptr : key;
+            break;
+        }
+        case ROW_INFO:
+            ImGui::TextDisabled("%s", r.label);
+            break;
+        case ROW_BUTTON:
+            if (widgets->button(r.label) && r.ptr2)
+                ((void(*)())r.ptr2)();
+            break;
+        case ROW_INPUT:
+            ImGui::InputText(r.label, (char*)r.ptr, 64);
+            break;
+        case ROW_CONFIGLIST: {
+            auto names = config::get_config_list_mem();
+            if (names.empty()) {
+                ImGui::TextDisabled("%s", "no configs in memory yet");
+            } else {
+                for (size_t i = 0; i < names.size(); i++) {
+                    gui->push_id((int)i);
+                    const bool sel = (g_cfg_name == names[i]);
+                    char buf[128];
+                    sprintf_s(buf, "%s%s", sel ? "> " : "", names[i].c_str());
+                    if (widgets->button(buf)) {
+                        strncpy_s(g_cfg_name, names[i].c_str(), sizeof(g_cfg_name) - 1);
+                        if (config::load_config_mem(names[i]))
+                            notifications::add("config loaded");
+                    }
+                    gui->pop_id();
+                }
+            }
+            break;
+        }
+    }
+}
+
+// drain finished cloud workers: apply on the render thread, notify here
+static void cloud_drain() {
+    std::lock_guard<std::mutex> lk(g_cloud_mu);
+    if (g_cloud_share.ready) {
+        g_cloud_share.ready = false;
+        if (g_cloud_share.ok && !g_cloud_share.text.empty()) {
+            ImGui::SetClipboardText(g_cloud_share.text.c_str());
+            notifications::add("upload done - link copied to clipboard");
+        } else {
+            notifications::add("upload failed");
+        }
+        g_cloud_share.text.clear();
+    }
+    if (g_cloud_fetch.ready) {
+        g_cloud_fetch.ready = false;
+        if (g_cloud_fetch.ok && !g_cloud_fetch.text.empty()) {
+            if (config::apply_fetched_config(g_cloud_fetch.text))
+                notifications::add("cloud config applied");
+            else
+                notifications::add("cloud config invalid");
+        } else {
+            notifications::add("fetch failed");
+        }
+        g_cloud_fetch.text.clear();
+    }
+}
+
+// ============================================================================
+// players tab
+// ============================================================================
+static void render_players_tab() {
+    auto snap = cache::get_players_snap();
+    if (!snap || snap->empty()) {
+        ImGui::TextDisabled("%s", "no players cached yet");
+        return;
+    }
+    for (size_t i = 0; i < snap->size(); i++) {
+        const auto& p = (*snap)[i];
+        const std::uint64_t addr = p.instance.address;
+        if (!addr) continue;
+        gui->push_id((int)i);
+        std::string name = playertools::ops::display_for(addr);
+        if (name.empty()) name = p.display_name.empty() ? p.name : p.display_name;
+        char buf[160];
+        sprintf_s(buf, "%s  [%d hp]", name.c_str(), (int)p.health);
+        ImGui::TextUnformatted(buf);
+        gui->sameline();
+        if (widgets->button("teleport")) {
+            if (!playertools::ops::teleport_to(addr))
+                notifications::add("teleport failed");
+        }
+        gui->sameline();
+        const bool spec = playertools::ops::is_spectating(addr);
+        if (widgets->button(spec ? "stop" : "spectate")) {
+            if (spec) playertools::ops::stop_spectate();
+            else playertools::ops::spectate(addr);
+        }
+        gui->pop_id();
+    }
+}
+
+// ============================================================================
+// colours tab
+// ============================================================================
+static void render_colours_tab() {
+    ImGui::TextDisabled("%s", "aim");
+    widgets->color_picker("prediction dot", settings::aimbot::prediction_color);
+    widgets->color_picker("aim fov", settings::aimbot::fov_circle_colour);
+    widgets->color_picker("aim fov outline", settings::aimbot::fov_outline_colour);
+    widgets->color_picker("aim fov fill", settings::aimbot::fov_fill_colour);
+    widgets->color_picker("trigger fov", settings::triggerbot::fov_circle_colour);
+    widgets->color_picker("trigger fov fill", settings::triggerbot::fov_fill_colour);
+    ImGui::TextDisabled("%s", "esp");
+    widgets->color_picker("box", settings::visuals::hostile.colour);
+    widgets->color_picker("box mid", settings::visuals::hostile.box_colour_mid);
+    widgets->color_picker("box low", settings::visuals::hostile.box_colour_low);
+    widgets->color_picker("box fill", settings::visuals::hostile.box_fill_colour);
+    widgets->color_picker("box fill mid", settings::visuals::hostile.box_fill_colour_mid);
+    widgets->color_picker("box fill low", settings::visuals::hostile.box_fill_colour_low);
+    widgets->color_picker("username", settings::visuals::hostile.username_colour);
+    widgets->color_picker("username alt", settings::visuals::hostile.username_colour_two);
+    widgets->color_picker("distance", settings::visuals::hostile.distance_colour);
+    widgets->color_picker("held tool", settings::visuals::hostile.tool_colour);
+    widgets->color_picker("healthbar", settings::visuals::hostile.healthbar_colour);
+    widgets->color_picker("healthbar mid", settings::visuals::hostile.healthbar_colour_mid);
+    widgets->color_picker("healthbar low", settings::visuals::hostile.healthbar_colour_low);
+    widgets->color_picker("healthbar text", settings::visuals::hostile.healthbar_text_colour);
+    widgets->color_picker("enemy highlight", settings::visuals::enemy_highlight_colour);
+    widgets->color_picker("friendly highlight", settings::visuals::friendly_highlight_colour);
+    ImGui::TextDisabled("%s", "interface");
+    widgets->color_picker("keybind feature", settings::misc::keybind_indicator_feature_colour);
+    widgets->color_picker("keybind mode", settings::misc::keybind_indicator_mode_colour);
+}
+
+// ============================================================================
+// overlays live outside the menu window so they work while closed.
+// each widget self-gates on its spawn alpha - ease them here every frame.
+// ============================================================================
+static void overlays_tick() {
+    // audio backend pumps here so playback + search workers advance
+    // even while every overlay is hidden
+    deezer->update();
+
+    gui->easing(var->gui.playerlist_spawn_alpha,
+        var->gui.show_playerlist ? 1.f : 0.f, 8.f, dynamic_easing);
+    gui->easing(var->gui.playerbar_spawn_alpha,
+        var->gui.show_playerbar ? 1.f : 0.f, 8.f, dynamic_easing);
+    gui->easing(var->gui.spotify_spawn_alpha,
+        (var->gui.show_spotify && settings::misc::spotify_window) ? 1.f : 0.f, 8.f, dynamic_easing);
+    gui->easing(var->gui.active_hotkeys_spawn_alpha,
+        settings::misc::keybind_list ? 1.f : 0.f, 8.f, dynamic_easing);
+    gui->easing(var->gui.watermark_spawn_alpha,
+        (var->gui.show_watermark && settings::misc::watermark) ? 1.f : 0.f, 8.f, dynamic_easing);
+
+    watermark->render();
+    keybinds->render();
+    playerlist->render();
+    playerbar->render();
+    musicplayer->render();
+
+    // soundcloud-backed search lives in the overlay layer next to
+    // the now-playing widget, same visibility as the music overlay
+    if (var->gui.show_spotify && settings::misc::spotify_window)
+        render_deezer_tab(360.f, 440.f);
+}
+
+// ============================================================================
+// menu chrome: theming, dust motes, section entrance, tab switching
+// ============================================================================
+static void theming_tick() {
+    gui_style* st = &var->style;
+    st->window_rounding = 8.f;
+    st->child_rounding = 8.f;
+    st->popup_rounding = 8.f;
+    st->frame_rounding = 4.f;
+    st->grab_rounding = 3.f;
+    st->scrollbar_size = SCALE(5.f);
+    st->scrollbar_rounding = 3.f;
+    st->colors[style_col_scrollbar_bg] = ImVec4(0.05f, 0.05f, 0.06f, 0.60f);
+    st->colors[style_col_scrollbar_grab] = ImVec4(0.698f, 0.612f, 1.0f, 0.32f);
+    st->colors[style_col_scrollbar_grab_hovered] = ImVec4(0.698f, 0.612f, 1.0f, 0.55f);
+    st->colors[style_col_scrollbar_grab_active] = ImVec4(0.698f, 0.612f, 1.0f, 0.80f);
+}
+
+struct dust_t { float x, y, sp, sz, ph; };
+
+static void dust_tick(ImDrawList* dl, const ImVec2& wp, float ww, float wh) {
+    static dust_t motes[26];
+    static bool init = false;
+    if (!init) {
+        init = true;
+        for (auto& m : motes) {
+            m.x = (rand() % 1000) / 1000.f;
+            m.y = (rand() % 1000) / 1000.f;
+            m.sp = 0.010f + (rand() % 1000) / 1000.f * 0.025f;
+            m.sz = 1.f + (rand() % 1000) / 1000.f * 1.5f;
+            m.ph = (rand() % 1000) / 1000.f * 6.283f;
+        }
+    }
+    const float t = (float)ImGui::GetTime();
+    const float dt = ImGui::GetIO().DeltaTime;
+    draw->push_clip_rect(dl, wp, ImVec2(wp.x + ww, wp.y + wh), true);
+    for (auto& m : motes) {
+        m.y -= m.sp * dt;
+        if (m.y < 0.f) { m.y = 1.f; m.x = (rand() % 1000) / 1000.f; }
+        const float tw = 0.35f + 0.65f * (0.5f + 0.5f * sinf(t * 1.7f + m.ph));
+        const float sway = 0.018f * sinf(t * 0.6f + m.ph * 1.7f);
+        dl->AddCircleFilled(ImVec2(wp.x + (m.x + sway) * ww, wp.y + m.y * wh), m.sz,
+            IM_COL32(178, 156, 255, (int)(38 * tw)));
+    }
+    draw->pop_clip_rect(dl);
+}
+
+static float s_sec_alpha[5][8] = {};
+static float s_sec_rise[5][8] = {};
+static float s_row_alpha[5][8][32] = {};
+static float s_slide_x = 0.f;
+static int s_sec_tab = -1;
+
+static void section_anims_reset(int tab) {
+    if (tab >= 0 && tab < 5) {
+        for (int s = 0; s < 8; s++) {
+            s_sec_alpha[tab][s] = 0.f;
+            s_sec_rise[tab][s] = 10.f + s * 4.f;
+            for (int r = 0; r < 32; r++)
+                s_row_alpha[tab][s][r] = 0.f;
+        }
+    }
+    s_slide_x = 22.f;
+    s_sec_tab = tab;
+}
+
+static void switch_tab(int t) {
+    if (t < 0 || t > 4 || t == var->gui.active_tab)
+        return;
+    var->gui.active_tab = t;
+    var->gui.tab_transition_alpha = 0.f;
+    var->gui.section_transition_alpha = 0.f;
+    section_anims_reset(t);
+}
+
+// ============================================================================
+// main frame
+// ============================================================================
+static const char* k_extra_tab_name = "colors";
+static const char* k_extra_tab_icon = "\xEF\x94\xBF";
+
+void c_gui::render() {
+    font->update();
+    theming_tick();
+    poll_keybind_listen();
+    cloud_drain();
+    notify->setup_notify();
+
+    // overlays live outside the menu window so they work while closed.
+    // each widget self-gates on its spawn alpha - eased in overlays_tick().
+    overlays_tick();
+
+    static bool s_last_open = false;
+    static bool s_open_told = false;
+    static bool s_begin_failed_told = false;
+    if (!var->gui.menu_open) {
+        s_last_open = false;
+        s_open_told = false;
+        s_begin_failed_told = false;
+        var->gui.menu_open_alpha = 0.f;
+        return;
+    }
+    if (!s_last_open) {
+        s_last_open = true;
+        var->gui.menu_open_alpha = 0.f;
+        section_anims_reset(var->gui.active_tab);
+    }
+    const float open_alpha = gui->easing(var->gui.menu_open_alpha, 1.f, 8.f, dynamic_easing);
+
+    // hotkeys 1-5 switch tabs (never while typing in a text field)
+    if (!ImGui::GetIO().WantTextInput) {
+        for (int k = 0; k < 5; k++)
+            if (GetAsyncKeyState('1' + k) & 1)
+                switch_tab(k);
+    }
+
+    gui->set_next_window_size(ImVec2(SCALE(680.f), SCALE(480.f)));
+    // nullptr close button: F1 owns the toggle, no stray X clicks.
+    if (!gui->begin("ivory", nullptr)) {
+        gui->end();
+        if (!s_begin_failed_told) {
+            s_begin_failed_told = true;
+            notifications::add("menu window failed to open");
+        }
+        return;
+    }
+    // live rect: overlays dock against it, and the open toast proves layout.
+    var->gui.menu_rect_min = gui->window_pos();
+    var->gui.menu_rect_size = ImVec2(gui->window_width(), gui->window_height());
+    var->gui.menu_rect_valid = true;
+    if (!s_open_told) {
+        s_open_told = true;
+        char ob[96];
+        sprintf_s(ob, "menu opened %.0fx%.0f", gui->window_width(), gui->window_height());
+        notifications::add(ob);
+    }
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, open_alpha);
+
+    ImDrawList* dl = gui->window_drawlist();
+    const ImVec2 wp = gui->window_pos();
+    const float ww = gui->window_width();
+    const float wh = gui->window_height();
+
+    // header hairline: glow + hairline + hot center
+    {
+        const float hy = wp.y + SCALE(34.f);
+        const float x0 = wp.x + SCALE(12.f), x1 = wp.x + ww - SCALE(12.f);
+        dl->AddLine(ImVec2(x0, hy + 1), ImVec2(x1, hy + 1), IM_COL32(178, 156, 255, 22), 3.0f);
+        dl->AddLine(ImVec2(x0, hy), ImVec2(x1, hy), IM_COL32(178, 156, 255, 70), 1.0f);
+        dl->AddLine(ImVec2(wp.x + ww * 0.35f, hy), ImVec2(wp.x + ww * 0.65f, hy),
+            IM_COL32(190, 172, 255, 150), 1.0f);
+    }
+
+    const float side_w = SCALE(148.f);
+    const ImVec2 avail = gui->content_avail();
+
+    static float s_pill_y = -1.f;
+    static float s_pill_h = 20.f;
+    float pill_target_y = -1.f;
+
+    gui->begin_content("sidebar", ImVec2(side_w, 0));
+    for (int t = 0; t < 5; t++) {
+        const char* name = (t < 4) ? tab_names[t] : k_extra_tab_name;
+        const char* icon = (t < 4) ? tab_icons[t] : k_extra_tab_icon;
+        char buf[96];
+        sprintf_s(buf, "%s  %s%s", icon, (t == var->gui.active_tab) ? "> " : "", name);
+        if (widgets->button(buf))
+            switch_tab(t);
+        if (t == var->gui.active_tab) {
+            const ImVec2 mn = ImGui::GetItemRectMin();
+            const ImVec2 mx = ImGui::GetItemRectMax();
+            pill_target_y = mn.y;
+            s_pill_h = mx.y - mn.y;
+            // rail pill drawn after layout, below
+            if (s_pill_y < 0.f) s_pill_y = pill_target_y;
+        }
+    }
+    gui->end_content();
+
+    // sliding rail indicator eases toward the active tab
+    if (pill_target_y >= 0.f) {
+        if (s_pill_y < 0.f) s_pill_y = pill_target_y;
+        s_pill_y += (pill_target_y - s_pill_y) * fminf(1.f, ImGui::GetIO().DeltaTime * 14.f);
+        const float px = wp.x + SCALE(6.f);
+        dl->AddRectFilled(ImVec2(px, s_pill_y + 4), ImVec2(px + SCALE(3.f), s_pill_y + s_pill_h - 4),
+            IM_COL32(178, 156, 255, (int)(220 * open_alpha)), SCALE(2.f));
+    }
+
+    gui->sameline();
+
+    gui->begin_content("main", ImVec2(avail.x - side_w - SCALE(8.f), 0));
+    const float alpha = gui->easing(var->gui.tab_transition_alpha, 1.f, 6.f, dynamic_easing);
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
+
+    const int tab = var->gui.active_tab;
+    if (s_sec_tab != tab)
+        section_anims_reset(tab);
+
+    // content slides in from the right while fading, once per tab switch
+    s_slide_x += (0.f - s_slide_x) * fminf(1.f, ImGui::GetIO().DeltaTime * 11.f);
+    if (s_slide_x > 0.25f)
+        ImGui::Indent(s_slide_x);
+
+    if (tab == 3) {
+        render_players_tab();
+    } else if (tab == 4) {
+        render_colours_tab();
+    } else if (tab >= 0 && tab < 3) {
+        for (int s = 0; s < k_section_counts[tab]; s++) {
+            float& sa = s_sec_alpha[tab][s];
+            float& sr = s_sec_rise[tab][s];
+            gui->easing(sa, 1.f, 7.f, dynamic_easing);
+            gui->easing(sr, 0.f, 10.f, dynamic_easing);
+            if (sr > 0.5f)
+                gui->dummy(ImVec2(0, sr));
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, sa);
+            if (child_titles[tab][s]) {
+                ImGui::TextUnformatted(child_titles[tab][s]);
+                // accent tick grows under the title with the section fade
+                const ImVec2 tp = ImGui::GetCursorScreenPos();
+                const float tw = ImGui::CalcTextSize(child_titles[tab][s]).x;
+                dl->AddLine(tp + ImVec2(0, 1), tp + ImVec2(tw * sa, 1),
+                    IM_COL32(178, 156, 255, (int)(160 * sa * open_alpha)), 2.0f);
+                gui->dummy(SCALE(0.f, 3.f));
+            }
+            const int nrows = k_settings_row_counts[tab][s];
+            for (int i = 0; i < nrows && i < 32; i++) {
+                float& ra = s_row_alpha[tab][s][i];
+                // later rows ease slower so the section cascades downward
+                const float spd = 9.f - (i > 8 ? 8 : i) * 0.5f;
+                gui->easing(ra, 1.f, spd, dynamic_easing);
+                ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ra);
+                render_row(k_settings_rows[tab][s][i]);
+                ImGui::PopStyleVar();
+            }
+            ImGui::PopStyleVar();
+            gui->dummy(SCALE(0.f, 6.f));
+        }
+    }
+
+    if (s_slide_x > 0.25f)
+        ImGui::Unindent(s_slide_x);
+
+    ImGui::PopStyleVar();
+    gui->end_content();
+
+    dust_tick(dl, wp, ww, wh);
+
+    ImGui::PopStyleVar();
+    gui->end();
+}
+
+// ============================================================================
+// slot configs (memory-backed) + boot
+// ============================================================================
+static std::string slot_name(int slot) {
+    char b[32];
+    sprintf_s(b, "slot %d", slot);
+    return b;
+}
+
+bool c_gui::save_config(int slot)   { return config::save_config_mem(slot_name(slot)); }
+bool c_gui::load_config(int slot)   { return config::load_config_mem(slot_name(slot)); }
+void c_gui::delete_config(int slot) { config::delete_config_mem(slot_name(slot)); }
+void c_gui::reset_defaults()        { config::reset_to_defaults(); }
+
+void c_gui::boot_config() {
+    if (cfg_auto_load)
+        config::load_autoload();
+}

@@ -1,0 +1,21 @@
+# binaries & build outputs
+Build/
+*.dll
+*.exe
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.masked
+*.tmp
+*.old
+*.user
+payload_blob_key.h
+payload_key.h
+
+# tooling
+.vs/
+node_modules/
+.wrangler/
+*.log

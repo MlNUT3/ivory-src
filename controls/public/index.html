@@ -1,0 +1,1019 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>grim</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3 5 9v9c0 6 5 10 11 11 6-1 11-5 11-11V9z' fill='%23a855f7'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    --bg:#0d0d12; --panel:#15151c; --panel2:#1a1a23; --panel3:#20202b;
+    --line:rgba(255,255,255,.06); --line2:rgba(255,255,255,.10);
+    --txt:#e9e9f0; --mut:#8a8a9c; --mut2:#5f5f72;
+    --acc:#a855f7; --acc2:#7c3aed; --accsoft:rgba(168,85,247,.14);
+    --ok:#22c55e; --bad:#ef4444; --warn:#eab308;
+    --r:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:13px/1.45 "Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#2b2b38;border-radius:9px;border:2px solid transparent;background-clip:padding-box}
+  ::-webkit-scrollbar-thumb:hover{background:#3a3a4a;background-clip:padding-box}
+  input,button,select,textarea{font:inherit;color:inherit}
+  button{cursor:pointer;border:0;background:none}
+  .hide{display:none !important}
+  body[data-theme="midnight"]{--acc:#3b82f6;--acc2:#2563eb;--accsoft:rgba(59,130,246,.14)}
+  body[data-theme="mono"]{--acc:#d4d4d8;--acc2:#a1a1aa;--accsoft:rgba(212,212,216,.14)}
+  body[data-theme="phantom"]{--acc:#ef4444;--acc2:#b91c1c;--accsoft:rgba(239,68,68,.14)}
+
+  /* ---------------- auth ---------------- */
+  #auth{position:fixed;inset:0;display:grid;place-items:center;background:
+      radial-gradient(900px 600px at 50% -10%,rgba(168,85,247,.18),transparent 70%),var(--bg);z-index:60}
+  .card{width:340px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px}
+  .brand{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:4px}
+  .brand svg{width:26px;height:26px;filter:drop-shadow(0 0 10px rgba(168,85,247,.6))}
+  .brand b{font-size:22px;letter-spacing:-.04em;font-weight:800}
+  .brand b i{font-style:normal;color:var(--acc)}
+  .sub{text-align:center;color:var(--mut);font-size:11.5px;margin-bottom:20px;letter-spacing:.06em;text-transform:uppercase}
+  .field{margin-bottom:11px}
+  .field label{display:block;font-size:11px;color:var(--mut);margin-bottom:5px;letter-spacing:.03em}
+  .inp{width:100%;background:var(--panel2);border:1px solid var(--line2);border-radius:9px;padding:10px 12px;outline:none;transition:.15s}
+  .inp:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--accsoft)}
+  .btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;background:linear-gradient(180deg,var(--acc),var(--acc2));
+    border-radius:9px;padding:10px;font-weight:600;color:#fff;transition:.15s;box-shadow:0 6px 18px -8px var(--acc)}
+  .btn:hover{filter:brightness(1.08)}
+  .btn.ghost{background:var(--panel2);border:1px solid var(--line2);color:var(--txt);box-shadow:none;font-weight:500}
+  .btn.ghost:hover{background:var(--panel3)}
+  .btn.sm{width:auto;padding:7px 14px;font-size:12px}
+  .swap{text-align:center;margin-top:14px;font-size:12px;color:var(--mut)}
+  .swap a{color:var(--acc);cursor:pointer;text-decoration:none}
+  .err{color:var(--bad);font-size:12px;text-align:center;margin-top:10px;min-height:16px}
+
+  /* ---------------- shell ---------------- */
+  #app{display:flex;height:100%}
+  .sidebar{width:212px;flex:0 0 212px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:14px 10px}
+  .sbrand{display:flex;align-items:center;gap:9px;padding:6px 8px 16px}
+  .sbrand svg{width:22px;height:22px;filter:drop-shadow(0 0 8px rgba(168,85,247,.55))}
+  .sbrand b{font-size:18px;font-weight:800;letter-spacing:-.04em}
+  .sbrand b i{font-style:normal;color:var(--acc)}
+  .nav{display:flex;flex-direction:column;gap:2px;flex:1;overflow:auto}
+  .nitem{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;color:var(--mut);font-weight:500;transition:.13s;position:relative;text-align:left;width:100%}
+  .nitem svg{width:16px;height:16px;flex:0 0 16px;opacity:.85}
+  .nitem:hover{background:var(--panel2);color:var(--txt)}
+  .nitem.on{background:var(--accsoft);color:#fff}
+  .nitem.on::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--acc)}
+  .nitem .badge{margin-left:auto;background:var(--acc);color:#fff;font-size:10px;font-weight:700;border-radius:20px;padding:1px 6px;min-width:18px;text-align:center}
+  .sep{height:1px;background:var(--line);margin:8px 6px}
+  .ucard{display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:9px 10px;margin-top:8px}
+  .ava{width:32px;height:32px;border-radius:9px;flex:0 0 32px;display:grid;place-items:center;font-weight:700;font-size:14px;color:#fff;background:linear-gradient(135deg,var(--acc),var(--acc2));overflow:hidden}
+  .ava img{width:100%;height:100%;object-fit:cover}
+  .ucard .m{min-width:0;flex:1}
+  .ucard .m b{display:block;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ucard .m span{font-size:10.5px;color:var(--acc)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--mut2);flex:0 0 7px}
+  .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .top{display:flex;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid var(--line)}
+  .top h1{font-size:16px;font-weight:700;letter-spacing:-.02em}
+  .top .tagpill{font-size:10.5px;font-weight:600;color:var(--acc);background:var(--accsoft);border-radius:20px;padding:2px 9px}
+  .top .right{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:11.5px;color:var(--mut)}
+  .content{flex:1;display:flex;gap:16px;padding:16px 18px;overflow:hidden}
+  .glist{width:172px;flex:0 0 172px;overflow:auto;display:flex;flex-direction:column;gap:3px}
+  .gitem{padding:8px 11px;border-radius:9px;color:var(--mut);font-weight:500;text-align:left;transition:.13s;font-size:12.5px}
+  .gitem:hover{background:var(--panel2);color:var(--txt)}
+  .gitem.on{background:var(--panel3);color:#fff}
+  .rows{flex:1;overflow:auto;padding-right:4px;max-width:1060px;margin:0 auto;width:100%}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;align-content:start}
+  .rowc{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:11px 13px;display:flex;align-items:center;gap:12px;min-height:52px;transition:.13s}
+  .rowc:hover{border-color:var(--line2)}
+  .rowc.stack{display:block}
+  .rowc .lbl{font-size:12.5px;font-weight:500;flex:1;min-width:0}
+  .rowc .lbl small{display:block;color:var(--mut2);font-size:10.5px;font-weight:400;margin-top:2px}
+  .ctrl{margin-left:auto;display:flex;align-items:center;gap:8px;flex:0 0 auto}
+
+  .sw{width:38px;height:21px;border-radius:20px;background:#2e2e3c;position:relative;transition:.16s;flex:0 0 38px}
+  .sw::after{content:"";position:absolute;top:2.5px;left:2.5px;width:16px;height:16px;border-radius:50%;background:#8a8a9c;transition:.16s}
+  .sw.on{background:var(--accsoft)}
+  .sw.on::after{left:19.5px;background:var(--acc);box-shadow:0 0 10px var(--acc)}
+
+  input[type=range]{-webkit-appearance:none;appearance:none;height:4px;border-radius:4px;background:#2e2e3c;outline:none;flex:1}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--acc);cursor:pointer;box-shadow:0 0 0 3px rgba(168,85,247,.18)}
+  input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:var(--acc);cursor:pointer}
+  .val{font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--txt);background:var(--panel3);border-radius:6px;padding:2px 7px;min-width:44px;text-align:center}
+  .sliderwrap{display:flex;align-items:center;gap:10px;margin-top:9px}
+
+  select.sel{background:var(--panel3);border:1px solid var(--line2);border-radius:8px;padding:6px 9px;outline:none;font-size:12px;max-width:132px}
+  select.sel:focus{border-color:var(--acc)}
+  .cin{display:flex;align-items:center;gap:7px}
+  .cin input[type=color]{width:26px;height:26px;padding:0;border:1px solid var(--line2);border-radius:7px;background:none;cursor:pointer}
+  .cin input.hex{width:82px;background:var(--panel3);border:1px solid var(--line2);border-radius:7px;padding:5px 8px;font-size:11.5px;outline:none;text-transform:lowercase}
+  .cin input.hex:focus{border-color:var(--acc)}
+  input.txt{background:var(--panel3);border:1px solid var(--line2);border-radius:8px;padding:7px 10px;outline:none;font-size:12px;width:150px}
+  input.txt:focus{border-color:var(--acc)}
+  .ebtn{background:var(--panel3);border:1px solid var(--line2);border-radius:8px;padding:7px 13px;font-size:12px;font-weight:500;transition:.13s;white-space:nowrap}
+  .ebtn:hover{background:var(--panel);border-color:var(--acc)}
+  .ebtn.danger{color:var(--bad);border-color:rgba(239,68,68,.3)}
+  .ebtn.danger:hover{background:rgba(239,68,68,.12);border-color:var(--bad)}
+
+  .empty{color:var(--mut2);font-size:12.5px;padding:34px;text-align:center;border:1px dashed var(--line2);border-radius:12px}
+
+  /* players */
+  .ptable{width:100%;border-collapse:collapse;font-size:12.5px}
+  .ptable th{text-align:left;color:var(--mut);font-weight:500;font-size:11px;padding:8px 10px;border-bottom:1px solid var(--line)}
+  .ptable td{padding:9px 10px;border-bottom:1px solid var(--line)}
+  .ptable tr:hover td{background:var(--panel2)}
+  .hpf{display:inline-block;width:76px;height:6px;border-radius:6px;background:#2e2e3c;overflow:hidden;vertical-align:middle}
+  .hpf i{display:block;height:100%;background:var(--ok)}
+
+  /* panels (profile/chat/users) */
+  .overlay{position:fixed;inset:0;background:rgba(6,6,10,.62);backdrop-filter:blur(4px);display:grid;place-items:center;z-index:50}
+  .panel{width:560px;max-width:94vw;max-height:86vh;background:var(--panel);border:1px solid var(--line2);border-radius:16px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px -30px #000}
+  .panel .ph{display:flex;align-items:center;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line)}
+  .panel .ph h2{font-size:14.5px;font-weight:700}
+  .panel .ph .x{margin-left:auto;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:var(--mut)}
+  .panel .ph .x:hover{background:var(--panel2);color:var(--txt)}
+  .panel .pb{padding:18px;overflow:auto}
+
+  .chatwrap{display:flex;flex-direction:column;height:560px}
+  .panel.chat{width:720px}
+  .msgs{flex:1;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:16px 18px}
+  .day{align-self:center;font-size:10.5px;color:var(--mut2);background:var(--panel2);border-radius:20px;padding:3px 12px;margin:6px 0}
+  .msg{display:flex;gap:10px}
+  .msg .m{min-width:0;flex:1}
+  .msg .m .h{display:flex;align-items:baseline;gap:7px;margin-bottom:3px}
+  .msg .m .h b{font-size:12.5px;font-weight:600}
+  .msg .m .h .t{font-size:10px;color:var(--acc);background:var(--accsoft);border-radius:20px;padding:1px 7px}
+  .msg .m .h .ts{font-size:10.5px;color:var(--mut2)}
+  .msg .m .txt{font-size:12.5px;color:var(--txt);word-break:break-word;white-space:pre-wrap;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:7px 11px}
+  .msg.me .m .txt{background:var(--accsoft);border-color:rgba(168,85,247,.28)}
+  .chatbar{display:flex;gap:9px;padding:13px 16px;border-top:1px solid var(--line);align-items:flex-end}
+  .chatbar textarea{flex:1;background:var(--panel2);border:1px solid var(--line2);border-radius:9px;padding:10px 12px;outline:none;resize:none;max-height:110px;font:inherit;line-height:1.45}
+  .chatbar textarea:focus{border-color:var(--acc)}
+
+  .urow{display:flex;align-items:center;gap:11px;padding:10px;border-radius:10px}
+  .urow:hover{background:var(--panel2)}
+  .urow .m{flex:1;min-width:0}
+  .urow .m b{font-size:12.5px;font-weight:600;display:block}
+  .urow .m span{font-size:11px;color:var(--mut)}
+  .hwidp{font-size:10.5px;color:var(--mut);font-family:ui-monospace,Consolas,monospace;white-space:nowrap}
+
+  .toasts{position:fixed;bottom:16px;right:16px;display:flex;flex-direction:column;gap:8px;z-index:80}
+  .toast{background:var(--panel3);border:1px solid var(--line2);border-left:3px solid var(--acc);border-radius:9px;padding:10px 14px;font-size:12.5px;box-shadow:0 12px 30px -12px #000;animation:tin .18s ease}
+  @keyframes tin{from{opacity:0;transform:translateY(8px)}}
+
+  .burger{display:none;width:34px;height:34px;border-radius:9px;background:var(--panel2);border:1px solid var(--line2);font-size:15px;color:var(--txt)}
+
+  @media(max-width:820px){
+    .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:40;transform:translateX(-100%);box-shadow:20px 0 60px rgba(0,0,0,.5)}
+    .sidebar.open{transform:none}
+    .burger{display:grid;place-items:center}
+    .content{flex-direction:column;padding:12px;gap:10px;overflow:auto}
+    .glist{width:100%;flex:0 0 auto;flex-direction:row;overflow-x:auto;gap:6px}
+    .gitem{white-space:nowrap;flex:0 0 auto;border:1px solid var(--line);background:var(--panel2)}
+    .gitem.on{border-color:var(--acc)}
+    .rows{max-width:100%;padding-right:0;overflow:visible}
+    .top{padding:10px 12px;flex-wrap:wrap;gap:8px}
+    .top .right{width:100%;margin-left:0;justify-content:flex-start}
+    .grid{grid-template-columns:1fr}
+    .panel{width:94vw;max-height:92vh}
+    .chatwrap{height:62vh}
+    .msgs{padding:10px}
+    .ptable{display:block;overflow-x:auto}
+    .nitem{padding:11px 12px;font-size:14px}
+    .ebtn{padding:10px 14px}
+    #clLog{font-size:10px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ AUTH ============ -->
+<div id="auth">
+  <div class="card">
+    <div class="brand"><span id="authGlyph"></span><b>gr<i>i</i>m</b></div>
+    <div class="sub" id="authSub">sign in to continue</div>
+    <div id="authCreds">
+      <div class="field"><label>Username</label><input class="inp" id="aUser" autocomplete="username" spellcheck="false" /></div>
+      <div class="field"><label>Password</label><input class="inp" id="aPass" type="password" autocomplete="current-password" /></div>
+    </div>
+    <div class="field hide" id="authTok"><label>Access token</label><input class="inp" id="aToken" spellcheck="false" placeholder="grim-xxxx-xxxx" /></div>
+    <div class="field hide" id="authInvite"><label>Access token</label><input class="inp" id="aInvite" spellcheck="false" placeholder="grim-xxxx-xxxx" /></div>
+    <button class="btn" id="aGo">Sign in</button>
+    <div class="swap" id="aSwap">No account? <a>Create one</a></div>
+    <div class="swap" id="aTokSwap" style="margin-top:6px">Have an access token? <a>Use it</a></div>
+    <div class="err" id="aErr"></div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app" class="hide">
+  <aside class="sidebar" id="sidebar">
+    <div class="sbrand"><span id="navGlyph"></span><b>gr<i>i</i>m</b></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="ucard" id="ucard"></div>
+  </aside>
+  <section class="main">
+    <header class="top">
+      <button class="burger" id="burger">☰</button>
+      <h1 id="title">Aimbot</h1>
+      <span class="tagpill hide" id="tagpill"></span>
+      <div class="right">
+        <span id="cliStat">client: offline</span>
+        <button class="ebtn" id="btnLoad">Load</button>
+        <button class="ebtn" id="btnUnload">Unload</button>
+        <span id="connTxt">connecting…</span>
+        <span class="dot" id="connDot"></span>
+      </div>
+    </header>
+    <div class="content">
+      <div class="glist" id="glist"></div>
+      <div class="rows" id="rows"></div>
+    </div>
+  </section>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<div id="modalRoot"></div>
+
+<script src="/schema.js"></script>
+<script>
+/* ================================================================= state */
+const GLYPH = '<svg viewBox="0 0 32 32" fill="none"><path d="M16 2 4 8v10c0 6.6 5.2 11.1 12 12 6.8-.9 12-5.4 12-12V8L16 2z" fill="url(#g)"/><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#c084fc"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs></svg>';
+
+const S = {
+  token: localStorage.getItem('grim_token') || '',
+  me: null, users: [], features: {}, params: {},
+  tab: 'aimbot', group: null, players: [],
+  ws: null, connected: false, pending: null, pendTimer: 0, logs: '', local: null, cfgs: [], cfgAuto: '', walls: [], dms: null, dmView: null, chatTab: 'global',
+};
+const DEF = {}; const KIND = {};
+for (const sec of SCHEMA) for (const g of sec.groups) for (const r of g.rows) { DEF[r.k] = r.d; KIND[r.k] = r.t; }
+
+/* defaults filled in for anything the server hasn't sent yet */
+function val(k) { return (k in S.params) ? S.params[k] : ((k in S.features) ? S.features[k] : DEF[k]); }
+const st = { b: (k) => !!val(k), n: (k) => Number(val(k)) || 0, s: (k) => String(val(k) == null ? '' : val(k)) };
+
+/* ================================================================= api */
+async function api(path, opts = {}) {
+  opts.headers = Object.assign({ 'content-type': 'application/json' }, opts.headers || {});
+  if (S.token) opts.headers['x-auth'] = S.token;
+  if (opts.body && typeof opts.body !== 'string') opts.body = JSON.stringify(opts.body);
+  const r = await fetch('/api' + path, opts);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+  return d;
+}
+
+/* ================================================================= auth ui */
+let authMode = 0; // 0 = sign in, 1 = create, 2 = token
+function renderAuth() {
+  $('authCreds').classList.toggle('hide', authMode === 2);
+  $('authTok').classList.toggle('hide', authMode !== 2);
+  $('authInvite').classList.toggle('hide', authMode !== 1);
+  $('authGlyph').classList.toggle('hide', authMode === 1);
+  $('authSub').textContent = ['sign in to continue', 'create your account', 'sign in with your access token'][authMode];
+  $('aGo').textContent = ['Sign in', 'Create account', 'Sign in'][authMode];
+  $('aSwap').innerHTML = authMode === 2 ? '' : (authMode ? 'Have an account? <a>Sign in</a>' : 'No account? <a>Create one</a>');
+  $('aTokSwap').innerHTML = authMode === 2 ? '<a>Use username & password</a>' : 'Have an access token? <a>Use it</a>';
+  $('aErr').textContent = '';
+}
+document.getElementById('authGlyph').innerHTML = GLYPH;
+document.getElementById('navGlyph').innerHTML = GLYPH;
+$('aSwap').onclick = () => { authMode = authMode ? 0 : 1; renderAuth(); };
+$('aTokSwap').onclick = () => { authMode = authMode === 2 ? 0 : 2; renderAuth(); };
+$('aGo').onclick = doAuth;
+$('aPass').onkeydown = (e) => { if (e.key === 'Enter') doAuth(); };
+$('aUser').onkeydown = (e) => { if (e.key === 'Enter') $('aPass').focus(); };
+$('aToken').onkeydown = (e) => { if (e.key === 'Enter') doAuth(); };
+
+async function doAuth() {
+  $('aErr').textContent = '';
+  $('aGo').textContent = '…';
+  try {
+    let d;
+    if (authMode === 2) {
+      const token = $('aToken').value.trim();
+      if (!token) throw new Error('enter your access token');
+      d = await api('/login-token', { method: 'POST', body: { token } });
+    } else {
+      const username = $('aUser').value.trim(), password = $('aPass').value;
+      if (!username || !password) throw new Error('enter username and password');
+      const body = { username, password };
+      if (authMode === 1) {
+        const inv = $('aInvite').value.trim();
+        if (!inv) throw new Error('enter an access token');
+        body.token = inv;
+      }
+      d = await api(authMode ? '/register' : '/login', { method: 'POST', body });
+    }
+    S.token = d.token; localStorage.setItem('grim_token', d.token);
+    S.me = d.user; start();
+  } catch (e) { $('aErr').textContent = e.message; renderAuth(); }
+}
+
+function $(id) { return document.getElementById(id); }
+
+/* ================================================================= boot */
+async function start() {
+  $('auth').classList.add('hide'); $('app').classList.remove('hide');
+  try { if (!S.me) S.me = await api('/me'); } catch { return logout(); }
+  const cfg = await api('/config'); applyConfig(cfg);
+  S.users = await api('/users').catch(() => []);
+  S.players = await api('/players');
+  openWS(); renderAll();
+}
+function logout() {
+  localStorage.removeItem('grim_token'); S.token = ''; S.me = null;
+  if (S.ws) try { S.ws.close(); } catch {}
+  location.reload();
+}
+if (S.token) start(); else $('auth').classList.remove('hide');
+
+/* ================================================================= ws */
+function openWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(proto + '://' + location.host + '/api/ws?token=' + encodeURIComponent(S.token));
+  S.ws = ws;
+  ws.onopen = () => { S.connected = true; conn(); };
+  ws.onclose = () => { S.connected = false; conn(); setTimeout(() => { if (S.token) openWS(); }, 2500); };
+  ws.onerror = () => { try { ws.close(); } catch {} };
+  ws.onmessage = (e) => { try { handle(JSON.parse(e.data)); } catch {} };
+}
+function conn() { const d = $('connDot'), t = $('connTxt'); d.classList.toggle('on', S.connected); t.textContent = S.connected ? 'live' : 'reconnecting…'; }
+
+function handle(m) {
+  if (m.type === 'config') { applyConfig(m); renderRows(); clientStatus(); }
+  else if (m.type === 'chat' && m.message) { S.messages.push(m.message); if (S.panel === 'chat') renderChat(); toast(m.message.display + ': ' + m.message.body, 'chat'); }
+  else if (m.type === 'chat' && m.messages) { S.messages = m.messages; if (S.panel === 'chat') renderChat(); }
+  else if (m.type === 'presence' || m.type === 'users') { refreshUsers(); }
+  else if (m.type === 'players') { S.players = m.list; S.walls = m.walls || []; if (m.local) S.local = m.local; if (S.tab === 'world') renderRows(); const b = document.querySelector('[data-tab="world"] .badge'); if (b) b.textContent = S.players.length; }
+  else if (m.type === 'cfgs') { S.cfgs = m.list || []; S.cfgAuto = m.auto || ''; if (S.tab === 'config') renderRows(); }
+  else if (m.type === 'dm') { if (S.panel === 'dm' && S.dmView && (m.from === S.dmView || m.from === (S.me && S.me.id))) refreshDMThread(); else if (S.panel === 'chat' && S.chatTab === 'dm') renderDMs($('chatBody')); }
+  else if (m.type === 'dmreq') { toast('new dm request'); if (S.panel === 'chat' && S.chatTab === 'dm') renderDMs($('chatBody')); }
+  else if (m.type === 'dmopen') { if (S.panel === 'chat' && S.chatTab === 'dm') renderDMs($('chatBody')); }
+  else if (m.type === 'command') { /* silent - no toast per command */ }
+  else if (m.type === 'logs') { S.logs = m.text || ''; const el = $('clLog'); if (el) { el.textContent = S.logs || 'no log yet'; el.scrollTop = el.scrollHeight; } }
+  else if (m.type === 'commands') { (m.list || []).forEach(() => {}); }
+}
+
+function applyConfig(cfg) { if (!cfg) return; if (cfg.features) S.features = cfg.features; if (cfg.params) S.params = cfg.params; }
+
+/* coalesced push */
+function push(kind, k, v) {
+  (kind === 'features' ? S.features : S.params)[k] = v;
+  if (S.ws && S.ws.readyState === 1) {
+    if (!S.pending) S.pending = { features: {}, params: {} };
+    S.pending[kind][k] = v;
+    clearTimeout(S.pendTimer);
+    S.pendTimer = setTimeout(flush, 70);
+  }
+}
+function flush() {
+  if (!S.pending || !S.ws || S.ws.readyState !== 1) { S.pending = null; return; }
+  const f = S.pending.features, p = S.pending.params; S.pending = null;
+  if (Object.keys(f).length) S.ws.send(JSON.stringify({ type: 'set', features: f }));
+  if (Object.keys(p).length) S.ws.send(JSON.stringify({ type: 'set', params: p }));
+}
+function setB(k, v) { push('features', k, v); }
+function setP(k, v) { push('params', k, v); }
+
+/* ================================================================= render */
+const NAV = [...SCHEMA.map((s) => ({ id: s.id, name: s.name, icon: s.icon }))];
+const EXTRA = [
+  { sep: true },
+  { id: 'profile', name: 'Profile', icon: 'user' },
+  { id: 'chat', name: 'Chat', icon: 'chat', chat: true },
+  { id: 'people', name: 'Users', icon: 'users' },
+  { id: 'logout', name: 'Sign out', icon: 'logout' },
+];
+
+function renderAll() { renderSidebar(); renderNav(); renderGroups(); renderRows(); renderUser(); clientStatus(); }
+
+function renderSidebar() {}
+function renderNav() {
+  const el = $('nav'); el.innerHTML = '';
+  for (const it of NAV.concat(EXTRA)) {
+    if (it.sep) { const s = document.createElement('div'); s.className = 'sep'; el.appendChild(s); continue; }
+    if (it.id === 'people' && !canSeePeople()) continue;
+    const b = document.createElement('button');
+    b.className = 'nitem' + (S.tab === it.id ? ' on' : '');
+    b.dataset.tab = it.id;
+    b.innerHTML = '<span>' + it.name + '</span>' + (it.chat ? '<span class="badge hide" id="chatBadge"></span>' : '') + (it.id === 'world' ? '<span class="badge">' + S.players.length + '</span>' : '');
+    b.onclick = () => go(it.id);
+    el.appendChild(b);
+  }
+}
+function canSeePeople() { return !!(S.me && (S.me.role === 'owner' || S.me.tag === 'Close Friends' || S.me.tag === 'Owner')); }
+function go(id) {
+  if (id === 'logout') return logout();
+  if (id === 'people' && !canSeePeople()) return;
+  S.tab = id; S.panel = null; $('modalRoot').innerHTML = '';
+  const sec = SCHEMA.find((s) => s.id === id);
+  if (sec && !sec.groups.some((g) => g.id === S.group)) S.group = null;
+  renderNav(); renderGroups(); renderRows();
+  $('sidebar').classList.remove('open');
+}
+
+function renderGroups() {
+  const el = $('glist'); el.innerHTML = '';
+  const sec = SCHEMA.find((s) => s.id === S.tab);
+  const title = $('title'), pill = $('tagpill');
+  if (!sec) {
+    el.classList.add('hide');
+    title.textContent = ({ profile: 'Profile', chat: 'Chat', people: 'Users' })[S.tab] || '';
+    pill.classList.add('hide');
+    return;
+  }
+  el.classList.remove('hide');
+  title.textContent = sec.name; pill.classList.add('hide');
+  for (const g of sec.groups) {
+    const b = document.createElement('button');
+    b.className = 'gitem' + ((S.group || sec.groups[0].id) === g.id ? ' on' : '');
+    b.textContent = g.name;
+    b.onclick = () => { S.group = g.id; renderGroups(); renderRows(); };
+    el.appendChild(b);
+  }
+  S.group = S.group || sec.groups[0].id;
+}
+
+function renderRows() {
+  const wrap = $('rows'); wrap.innerHTML = '';
+  if (S.tab === 'profile') { if (S.panel !== 'profile') panelProfile(); return; }
+  if (S.tab === 'chat') { if (S.panel !== 'chat') panelChat(); return; }
+  if (S.tab === 'people') { if (S.panel !== 'people') panelPeople(); return; }
+  const sec = SCHEMA.find((s) => s.id === S.tab); if (!sec) return;
+  const g = sec.groups.find((x) => x.id === S.group) || sec.groups[0];
+  if (g.dynamic === 'client') return renderClient(wrap);
+  if (g.dynamic === 'players') return renderPlayers(wrap);
+  if (g.dynamic === 'cfgs') return renderCfgs(wrap);
+  if (g.dynamic === 'theme') return renderTheme(wrap);
+  const grid = document.createElement('div'); grid.className = 'grid'; wrap.appendChild(grid);
+  for (const r of g.rows) if (r.t === 'dynamic' || !r.show || r.show(st)) grid.appendChild(control(r));
+  if (!grid.children.length) wrap.innerHTML = '<div class="empty">Nothing here yet.</div>';
+}
+
+/* ---- one control card ---- */
+function control(r) {
+  const c = document.createElement('div'); c.className = 'rowc' + ((r.t === 'f' || r.t === 'i') ? ' stack' : '');
+  const lbl = document.createElement('div'); lbl.className = 'lbl'; lbl.textContent = r.l;
+  const box = document.createElement('div'); box.className = 'ctrl';
+
+  if (r.t === 'b') {
+    const sw = document.createElement('button'); sw.className = 'sw' + (st.b(r.k) ? ' on' : '');
+    sw.onclick = () => { const v = !st.b(r.k); setB(r.k, v); sw.classList.toggle('on', v); reflow(); };
+    box.appendChild(sw);
+  } else if (r.t === 'f' || r.t === 'i') {
+    const out = document.createElement('span'); out.className = 'val';
+    out.textContent = fmt(r, st.n(r.k));
+    const rg = document.createElement('input'); rg.type = 'range';
+    rg.min = r.mn; rg.max = r.mx; rg.step = r.st || (r.t === 'i' ? 1 : 0.01); rg.value = st.n(r.k);
+    rg.oninput = () => { out.textContent = fmt(r, +rg.value); };
+    rg.onchange = () => { setP(r.k, +rg.value); };
+    c.innerHTML = ''; c.appendChild(lbl); const w = document.createElement('div'); w.className = 'sliderwrap'; w.appendChild(rg); w.appendChild(out); c.appendChild(w);
+    return c;
+  } else if (r.t === 'c') {
+    const sel = document.createElement('select'); sel.className = 'sel';
+    for (const o of r.it) { const op = document.createElement('option'); op.value = o; op.textContent = o; sel.appendChild(op); }
+    sel.value = st.s(r.k); sel.onchange = () => { setP(r.k, sel.value); reflow(); };
+    box.appendChild(sel);
+  } else if (r.t === 'col') {
+    const w = document.createElement('div'); w.className = 'cin';
+    const cur = st.s(r.k) || '#a855f7';
+    const pick = document.createElement('input'); pick.type = 'color'; pick.value = cur.slice(0, 7);
+    const hex = document.createElement('input'); hex.className = 'hex'; hex.value = cur; hex.spellcheck = false;
+    pick.oninput = () => { hex.value = pick.value + (cur.length > 7 ? cur.slice(7) : ''); setP(r.k, hex.value); };
+    hex.onchange = () => { const v = hex.value.trim(); setP(r.k, v); if (/^#[0-9a-f]{6}/i.test(v)) pick.value = v.slice(0, 7); };
+    w.appendChild(pick); w.appendChild(hex); box.appendChild(w);
+  } else if (r.t === 'key') {
+    const sel = document.createElement('select'); sel.className = 'sel';
+    for (const g of KEYS) {
+      const og = document.createElement('optgroup'); og.label = g.g;
+      for (const kv of g.k) { const op = document.createElement('option'); op.value = kv[1]; op.textContent = kv[0]; og.appendChild(op); }
+      sel.appendChild(og);
+    }
+    sel.value = String(st.n(r.k)); sel.onchange = () => setP(r.k, +sel.value);
+    box.appendChild(sel);
+  } else if (r.t === 't') {
+    const inp = document.createElement('input'); inp.className = 'txt'; inp.value = st.s(r.k); inp.spellcheck = false;
+    inp.onchange = () => setP(r.k, inp.value);
+    box.appendChild(inp);
+  } else if (r.t === 'btn') {
+    const b = document.createElement('button'); b.className = 'ebtn' + (r.danger ? ' danger' : ''); b.textContent = r.l;
+    b.onclick = () => sendCmd(r.cmd);
+    c.innerHTML = ''; c.appendChild(b); return c;
+  }
+  c.appendChild(lbl); c.appendChild(box);
+  return c;
+}
+function fmt(r, v) { return r.t === 'i' ? String(Math.round(v)) : (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2).replace(/0$/, '')); }
+function reflow() { clearTimeout(S._rf); S._rf = setTimeout(renderRows, 40); }
+function sendCmd(cmd) { if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify({ type: 'cmd', cmd })); else toast('not connected'); }
+
+/* ---- players ---- */
+function renderPlayers(wrap) {
+  const holder = document.createElement('div');
+  holder.style.cssText = 'display:flex;flex-direction:column;gap:14px';
+
+  const radarCard = document.createElement('div'); radarCard.className = 'rowc stack';
+  radarCard.innerHTML = '<div class="lbl">Minimap<small>top-down, 500 studs across, you are the center — green friendly, red enemy</small></div>';
+  const cv = document.createElement('canvas');
+  cv.id = 'radar'; cv.width = 440; cv.height = 440;
+  cv.style.cssText = 'width:100%;max-width:440px;aspect-ratio:1;margin:10px auto 0;display:block;background:var(--bg);border:1px solid var(--line);border-radius:10px';
+  radarCard.appendChild(cv);
+  holder.appendChild(radarCard);
+
+  if (!S.players.length) {
+    const e = document.createElement('div'); e.className = 'empty';
+    e.textContent = 'No players reported by the client yet.';
+    holder.appendChild(e);
+    wrap.appendChild(holder);
+    drawRadar();
+    return;
+  }
+
+  const t = document.createElement('table'); t.className = 'ptable';
+  t.innerHTML = '<thead><tr><th>Display</th><th>Account</th><th>Health</th><th>Team</th><th>Position (x, y, z)</th><th>Dist</th><th></th></tr></thead>';
+  const tb = document.createElement('tbody');
+  for (const p of S.players) {
+    const tr = document.createElement('tr');
+    const hp = p.mh > 0 ? Math.max(0, Math.min(100, (p.health / p.mh) * 100)) : Math.max(0, Math.min(100, p.health));
+    tr.innerHTML = '<td>' + esc(p.dn || p.name || '?') + '</td>' +
+      '<td style="color:var(--mut)">' + esc(p.acc || '') + '</td>' +
+      '<td><span class="hpf"><i style="width:' + hp + '%"></i></span> ' + Math.round(p.health) + '</td>' +
+      '<td>' + (p.team ? 'friendly' : 'enemy') + '</td>' +
+      '<td style="font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--mut)">' + p.x.toFixed(1) + ', ' + p.y.toFixed(1) + ', ' + p.z.toFixed(1) + '</td>' +
+      '<td>' + Math.round(p.dist) + 'm</td>' +
+      '<td style="text-align:right;white-space:nowrap"><button class="ebtn" data-a="spectate" data-u="' + esc(p.uid) + '">Spectate</button> ' +
+      '<button class="ebtn" data-a="stopspectate">Stop spectate</button></td>';
+    tb.appendChild(tr);
+  }
+  t.appendChild(tb); holder.appendChild(t);
+  wrap.appendChild(holder);
+  wrap.onclick = (e) => { const b = e.target.closest('button[data-a]'); if (b) sendCmd(b.dataset.u ? b.dataset.a + ':' + b.dataset.u : b.dataset.a); };
+  drawRadar();
+}
+
+function drawRadar() {
+  const cv = $('radar'); if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height, cx = W / 2, cy = H / 2, R = W * 0.44;
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.lineWidth = 1;
+  for (const r of [R, R / 2]) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.font = '11px Inter,sans-serif';
+  ctx.fillText('N', cx - 3, 14);
+
+  const L = S.local || { x: 0, z: 0 };
+  const STUDS = 500;
+
+  // static geometry (walls) intersecting the player's plane
+  ctx.fillStyle = 'rgba(255,255,255,.09)';
+  for (const w of (S.walls || [])) {
+    const rx = cx + ((w.x - L.x) / STUDS) * R;
+    const ry = cy + ((w.z - L.z) / STUDS) * R;
+    const rw = Math.max(1, (w.w / STUDS) * R);
+    const rd = Math.max(1, (w.d / STUDS) * R);
+    ctx.fillRect(rx, ry, rw, rd);
+  }
+  for (const p of S.players) {
+    let px = cx + ((p.x - L.x) / STUDS) * R;
+    let py = cy + ((p.z - L.z) / STUDS) * R;
+    const dx = px - cx, dy = py - cy, len = Math.hypot(dx, dy);
+    if (len > R - 6) { px = cx + dx * (R - 6) / len; py = cy + dy * (R - 6) / len; }
+    ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2);
+    ctx.fillStyle = p.team ? '#22c55e' : '#ef4444'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+  ctx.fillStyle = '#e9e9f0'; ctx.fill();
+}
+
+/* ---- config manager ---- */
+let cfgAskAt = 0;
+function askCfgs(force) {
+  if (!S.ws || S.ws.readyState !== 1) return;
+  // the cfgs echo re-renders this tab, so without a cooldown the request
+  // loop feeds itself - only ask at most once every 4s unless forced
+  const now = Date.now();
+  if (!force && now - cfgAskAt < 4000) return;
+  cfgAskAt = now;
+  S.ws.send(JSON.stringify({ type: 'cmd', cmd: 'cfg_list' }));
+}
+function renderCfgs(wrap) {
+  const grid = document.createElement('div'); grid.className = 'grid';
+  grid.style.gridTemplateColumns = '1fr';
+
+  const card = document.createElement('div'); card.className = 'rowc stack';
+  card.innerHTML = '<div class="lbl">Save config<small>kept in memory by the running client — nothing touches disk</small></div>';
+  const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;margin-top:10px';
+  const inp = document.createElement('input'); inp.className = 'txt'; inp.placeholder = 'name';
+  inp.style.cssText = 'flex:1;width:auto';
+  const save = document.createElement('button'); save.className = 'ebtn'; save.textContent = 'Save';
+  save.onclick = () => { const v = inp.value.trim(); if (!v) return toast('enter a name'); sendCmd('cfg_save:' + v); setTimeout(() => askCfgs(true), 600); };
+  row.appendChild(inp); row.appendChild(save); card.appendChild(row); grid.appendChild(card);
+
+  const listCard = document.createElement('div'); listCard.className = 'rowc stack';
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;align-items:center;gap:8px';
+  const hlbl = document.createElement('div'); hlbl.className = 'lbl'; hlbl.style.flex = '1';
+  hlbl.innerHTML = 'Saved configs<small>' + (S.cfgAuto ? 'auto loads <b style="color:var(--acc)">' + esc(S.cfgAuto) + '</b> on every run' : 'no auto load set') + '</small>';
+  const rf = document.createElement('button'); rf.className = 'ebtn'; rf.textContent = 'Refresh';
+  rf.onclick = () => askCfgs(true);
+  hdr.appendChild(hlbl); hdr.appendChild(rf);
+  listCard.appendChild(hdr);
+
+  const list = document.createElement('div'); list.style.cssText = 'margin-top:10px;display:flex;flex-direction:column;gap:6px';
+  if (!S.cfgs.length) list.innerHTML = '<div style="color:var(--mut2);font-size:12px">No configs saved yet.</div>';
+  for (const n of S.cfgs) {
+    const isAuto = S.cfgAuto === n;
+    const r = document.createElement('div'); r.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+    const nm = document.createElement('span'); nm.style.cssText = 'flex:1;font-size:12.5px;min-width:80px'; nm.textContent = n;
+    const ab = document.createElement('button'); ab.className = 'ebtn'; ab.textContent = isAuto ? 'Auto ✓' : 'Set auto';
+    if (isAuto) { ab.style.background = 'var(--accsoft)'; ab.style.borderColor = 'var(--acc)'; ab.style.color = '#fff'; }
+    ab.onclick = () => sendCmd(isAuto ? 'cfg_autoload_clear' : 'cfg_autoload:' + n);
+    const ld = document.createElement('button'); ld.className = 'ebtn'; ld.textContent = 'Load';
+    ld.onclick = () => sendCmd('cfg_load:' + n);
+    const del = document.createElement('button'); del.className = 'ebtn danger'; del.textContent = 'Delete';
+    del.onclick = () => { if (window.confirm('Delete "' + n + '"?')) { sendCmd('cfg_delete:' + n); setTimeout(() => askCfgs(true), 600); } };
+    r.appendChild(nm); r.appendChild(ab); r.appendChild(ld); r.appendChild(del); list.appendChild(r);
+  }
+  listCard.appendChild(list); grid.appendChild(listCard);
+  wrap.appendChild(grid);
+  askCfgs();
+}
+
+/* ---- theme ---- */
+const THEMES = [['grim', '#a855f7'], ['midnight', '#3b82f6'], ['mono', '#d4d4d8'], ['phantom', '#ef4444']];
+function applyTheme(t) { document.body.dataset.theme = t; localStorage.setItem('grim_theme', t); }
+function renderTheme(wrap) {
+  const grid = document.createElement('div'); grid.className = 'grid';
+  grid.style.gridTemplateColumns = 'repeat(auto-fill,minmax(140px,1fr))';
+  const cur = localStorage.getItem('grim_theme') || 'grim';
+  for (const [name, color] of THEMES) {
+    const c = document.createElement('div'); c.className = 'rowc stack';
+    c.style.cursor = 'pointer';
+    c.innerHTML = '<div style="margin:10px auto 6px;width:44px;height:44px;border-radius:12px;background:' + color + ';border:2px solid ' + (cur === name ? 'var(--txt)' : 'transparent') + '"></div><div class="lbl" style="text-align:center;margin:0 0 10px">' + name + '</div>';
+    c.onclick = () => { applyTheme(name); renderRows(); };
+    grid.appendChild(c);
+  }
+  wrap.appendChild(grid);
+}
+applyTheme(localStorage.getItem('grim_theme') || 'grim');
+
+/* ---- client control ---- */
+function renderClient(wrap) {
+  const state = st.s('client.state') || 'offline';
+  const ver = st.s('client.ver') || '1';
+  const grid = document.createElement('div'); grid.className = 'grid';
+  grid.style.gridTemplateColumns = 'repeat(auto-fill,minmax(300px,1fr))';
+
+  const info = document.createElement('div'); info.className = 'rowc stack';
+  info.innerHTML = '<div class="lbl">Client status<small>reported by the running client</small></div>' +
+    '<div style="margin-top:11px;font-size:13px;display:flex;align-items:center;gap:9px">' +
+    '<span class="dot ' + (state === 'injected' ? 'on' : '') + '"></span>' + esc(state) +
+    '<span style="margin-left:auto;font-size:10.5px;color:var(--mut2)">loader v' + esc(ver) + '</span></div>';
+  grid.appendChild(info);
+
+  const tk = document.createElement('div'); tk.className = 'rowc stack';
+  tk.innerHTML = '<div class="lbl">Access token<small>the client signs in with this</small></div>' +
+    '<div style="display:flex;gap:8px;margin-top:9px"><input class="txt" id="clTok" style="flex:1;width:auto" readonly value="' + esc(S.token) + '"><button class="ebtn" id="clCopy">Copy</button></div>';
+  grid.appendChild(tk);
+
+  const ctl = document.createElement('div'); ctl.className = 'rowc stack';
+  ctl.style.gridColumn = '1 / -1';
+  ctl.innerHTML = '<div class="lbl">Control<small>Load / Unload live in the top bar — these apply instantly when the client is connected</small></div>';
+  const bar = document.createElement('div');
+  bar.style.cssText = 'display:flex;gap:8px;margin-top:10px;flex-wrap:wrap';
+  for (const [cmd, label, cls] of [
+    ['reinject', 'Reinject', 'ebtn'],
+    ['unload', 'Unload', 'ebtn'],
+    ['reset', 'Reset settings', 'ebtn'],
+    ['close', 'Close exe', 'ebtn'],
+    ['selfdestruct', 'Self destruct', 'ebtn danger'],
+  ]) {
+    const b = document.createElement('button'); b.className = cls; b.textContent = label;
+    if (cmd === 'selfdestruct') b.onclick = () => { if (window.confirm('Stop the client and eject it fully?')) sendCmd(cmd); };
+    else b.onclick = () => sendCmd(cmd);
+    bar.appendChild(b);
+  }
+  ctl.appendChild(bar);
+  grid.appendChild(ctl);
+
+  const lg = document.createElement('div'); lg.className = 'rowc stack';
+  lg.style.gridColumn = '1 / -1';
+  lg.innerHTML = '<div class="lbl">Client log<small>boot log relayed live from the running client</small></div>' +
+    '<pre id="clLog" style="margin-top:10px;max-height:280px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;font:11px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;color:var(--mut)">' + esc(S.logs || 'no log yet') + '</pre>';
+  grid.appendChild(lg);
+
+  wrap.appendChild(grid);
+  const logEl = $('clLog');
+  if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  $('clCopy').onclick = () => navigator.clipboard.writeText(S.token).then(() => toast('token copied'));
+}
+
+/* ================================================================= panels */
+S.panel = null; S.messages = S.messages || [];
+function closeModal() { $('modalRoot').innerHTML = ''; S.panel = null; go('aimbot'); }
+function modal(title, bodyHTML) {
+  $('modalRoot').innerHTML = '<div class="overlay" id="ov"><div class="panel"><div class="ph"><h2>' + title + '</h2><button class="x" id="ovx">✕</button></div><div class="pb" id="ovb">' + bodyHTML + '</div></div></div>';
+  $('ovx').onclick = closeModal;
+  $('ov').onclick = (e) => { if (e.target.id === 'ov') closeModal(); };
+}
+function panelProfile() {
+  S.panel = 'profile';
+  const m = S.me;
+  modal('Profile', `
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:18px">
+      <div class="ava" style="width:56px;height:56px;flex:0 0 56px;font-size:20px" id="pfAva">${avaInner(m)}</div>
+      <div style="flex:1"><b style="font-size:15px">${esc(m.display || m.username)}</b><div style="color:var(--acc);font-size:12px">${esc(m.tag || 'Member')}</div></div>
+      <label class="ebtn" style="cursor:pointer">Change picture<input type="file" id="pfFile" accept="image/*" class="hide"></label>
+      <button class="ebtn danger" id="pfClear">Remove</button>
+    </div>
+    <div class="field"><label>Display name</label><input class="inp" id="pfDisp" value="${esc(m.display || '')}" maxlength="24"></div>
+    <div class="field"><label>Username (login)</label><input class="inp" id="pfUser" value="${esc(m.username)}" maxlength="20"></div>
+    <div class="field"><label>Bio</label><textarea class="inp" id="pfBio" rows="3" maxlength="160">${esc(m.bio || '')}</textarea></div>
+    <div class="field"><label>Access token (the client signs in with this)</label>
+      <div style="display:flex;gap:8px"><input class="inp" id="pfTok" value="${esc(S.token)}" readonly><button class="ebtn" id="pfCopy">Copy</button></div>
+    </div>
+    <button class="btn" id="pfSave">Save profile</button>
+    <div class="err" id="pfErr"></div>`);
+  let pending = null;
+  $('pfFile').onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try { pending = await shrink(f); $('pfAva').innerHTML = '<img src="' + pending + '" alt="">'; }
+    catch { $('pfErr').textContent = 'could not read that image'; }
+  };
+  $('pfClear').onclick = () => { pending = ''; $('pfAva').innerHTML = avaInner({ display: m.display, username: m.username, av: 0 }); };
+  $('pfCopy').onclick = () => navigator.clipboard.writeText(S.token).then(() => toast('token copied'));
+  $('pfSave').onclick = async () => {
+    const body = { display: $('pfDisp').value, username: $('pfUser').value, bio: $('pfBio').value };
+    if (pending !== null) body.avatar = pending;
+    try { S.me = await api('/me', { method: 'PATCH', body }); toast('profile saved'); renderUser(); closeModal(); }
+    catch (e2) { $('pfErr').textContent = e2.message; }
+  };
+}
+function panelChat() {
+  S.panel = 'chat'; S.chatTab = 'global'; S.dmView = null;
+  modal('Chat', '<div style="display:flex;gap:6px;margin-bottom:12px"><button class="ebtn" id="tabG">Global</button><button class="ebtn" id="tabD">Direct</button></div><div id="chatBody"></div>');
+  $('tabG').onclick = () => { S.chatTab = 'global'; S.dmView = null; renderChatBody(); };
+  $('tabD').onclick = () => { S.chatTab = 'dm'; S.dmView = null; renderChatBody(); };
+  renderChatBody();
+}
+function renderChatBody() {
+  const body = $('chatBody'); if (!body) return;
+  const g = $('tabG'), d = $('tabD');
+  if (g) { g.style.borderColor = S.chatTab === 'global' ? 'var(--acc)' : ''; g.style.background = S.chatTab === 'global' ? 'var(--accsoft)' : ''; }
+  if (d) { d.style.borderColor = S.chatTab === 'dm' ? 'var(--acc)' : ''; d.style.background = S.chatTab === 'dm' ? 'var(--accsoft)' : ''; }
+  body.innerHTML = '';
+  document.querySelector('.panel').classList.toggle('chat', S.chatTab === 'global');
+  if (S.chatTab === 'global') renderGlobalChat(body);
+  else renderDMs(body);
+}
+function renderGlobalChat(body) {
+  const w = document.createElement('div'); w.className = 'chatwrap';
+  w.innerHTML = '<div class="msgs" id="msgs"></div><div class="chatbar"><textarea id="chatIn" rows="1" placeholder="Message…"></textarea><button class="btn sm" id="chatGo">Send</button></div>';
+  body.appendChild(w);
+  renderChat();
+  const ta = $('chatIn');
+  const send = () => { const v = ta.value.trim(); if (!v) return; if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify({ type: 'chat', body: v })); else toast('not connected'); ta.value = ''; ta.style.height = 'auto'; ta.focus(); };
+  $('chatGo').onclick = send;
+  ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
+  ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(110, ta.scrollHeight) + 'px'; };
+  ta.focus();
+}
+
+/* ---- direct messages ---- */
+async function renderDMs(body) {
+  if (!body) return;
+  body.innerHTML = '<div style="color:var(--mut2);padding:24px;text-align:center">loading…</div>';
+  let d;
+  try { d = await api('/dms'); } catch (e) { body.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; return; }
+  S.dms = d;
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:14px;max-height:64vh;overflow:auto;padding:4px';
+
+  if (d.requests.length) {
+    const rc = document.createElement('div'); rc.className = 'rowc stack';
+    rc.innerHTML = '<div class="lbl">Requests<small>accept to open the conversation - they see nothing until you do</small></div>';
+    for (const r of d.requests) {
+      const row = document.createElement('div'); row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:8px';
+      const nm = document.createElement('span'); nm.style.cssText = 'flex:1'; nm.textContent = r.display;
+      const acc = document.createElement('button'); acc.className = 'ebtn'; acc.textContent = 'Accept';
+      acc.onclick = async () => { try { await api('/dm-accept', { method: 'POST', body: { from: r.from } }); toast('request accepted'); renderDMs(body); } catch (e) { toast(e.message); } };
+      const dec = document.createElement('button'); dec.className = 'ebtn danger'; dec.textContent = 'Decline';
+      dec.onclick = async () => { try { await api('/dm-decline', { method: 'POST', body: { from: r.from } }); renderDMs(body); } catch (e) { toast(e.message); } };
+      row.appendChild(nm); row.appendChild(acc); row.appendChild(dec); rc.appendChild(row);
+    }
+    wrap.appendChild(rc);
+  }
+
+  const tc = document.createElement('div'); tc.className = 'rowc stack';
+  const tl = document.createElement('div'); tl.className = 'lbl'; tl.textContent = 'Conversations';
+  tc.appendChild(tl);
+  if (!d.threads.length) {
+    const e = document.createElement('div'); e.style.cssText = 'color:var(--mut2);font-size:12px;margin-top:8px';
+    e.textContent = 'No conversations yet - message someone from the Users tab.';
+    tc.appendChild(e);
+  }
+  for (const t of d.threads) {
+    const row = document.createElement('div'); row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer';
+    row.innerHTML = '<span style="flex:1">' + esc(t.display) + '</span><span style="color:var(--mut2);font-size:11px">' + time(t.ts) + '</span>';
+    row.onclick = () => openDM(t.uid, t.display);
+    tc.appendChild(row);
+  }
+  wrap.appendChild(tc);
+  body.innerHTML = ''; body.appendChild(wrap);
+}
+
+async function openDM(uid, display) {
+  let d;
+  try { d = await api('/dm-thread?from=' + encodeURIComponent(uid)); }
+  catch (e) { return toast(e.message); }
+  S.panel = 'dm'; S.dmView = uid;
+  modal('DM — ' + esc(display), '<div class="chatwrap"><div class="msgs" id="msgs"></div><div class="chatbar"><textarea id="chatIn" rows="1" placeholder="Message…"></textarea><button class="btn sm" id="chatGo">Send</button></div></div>');
+  renderDMMsgs(d.msgs);
+  const ta = $('chatIn');
+  const send = async () => {
+    const v = ta.value.trim(); if (!v) return;
+    ta.value = '';
+    try {
+      const r = await api('/dm', { method: 'POST', body: { to: uid, body: v } });
+      if (r.accepted) { const dd = await api('/dm-thread?from=' + encodeURIComponent(uid)); renderDMMsgs(dd.msgs); }
+      else toast('sent - waiting for them to accept');
+    } catch (e) { toast(e.message); }
+  };
+  $('chatGo').onclick = send;
+  ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
+  ta.focus();
+}
+
+async function refreshDMThread() {
+  if (!S.dmView) return;
+  try { const d = await api('/dm-thread?from=' + encodeURIComponent(S.dmView)); if (S.panel === 'dm') renderDMMsgs(d.msgs); } catch {}
+}
+
+function renderDMMsgs(msgs) {
+  const el = $('msgs'); if (!el) return;
+  el.innerHTML = (msgs || []).map((m) => '<div class="msg' + (m.uid === (S.me && S.me.id) ? ' me' : '') + '"><div class="m"><div class="txt">' + esc(m.body) + '</div></div></div>').join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function dmCompose(u) {
+  modal('Message ' + esc(u.display || u.username), '<div style="padding:16px;display:flex;flex-direction:column;gap:10px"><textarea class="inp" id="dmText" rows="3" placeholder="Type a message…"></textarea><button class="ebtn" id="dmSend">Send</button><div class="err" id="dmErr"></div></div>');
+  $('dmSend').onclick = async () => {
+    const v = $('dmText').value.trim();
+    if (!v) return ($('dmErr').textContent = 'write a message');
+    try { const r = await api('/dm', { method: 'POST', body: { to: u.id, body: v } }); closeModal(); toast(r.accepted ? 'sent' : 'sent - they must accept to see it'); }
+    catch (e) { $('dmErr').textContent = e.message; }
+  };
+  $('dmText').focus();
+}
+function dayLabel(ts) {
+  const d = new Date(ts || Date.now()), n = new Date();
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  if (day(d) === day(n)) return 'Today';
+  n.setDate(n.getDate() - 1);
+  if (day(d) === day(n)) return 'Yesterday';
+  return d.toLocaleDateString();
+}
+function renderChat() {
+  const el = $('msgs'); if (!el) return;
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  let html = '', lastDay = '';
+  for (const m of S.messages) {
+    const d = dayLabel(m.ts);
+    if (d !== lastDay) { html += `<div class="day">${esc(d)}</div>`; lastDay = d; }
+    const mu = S.users.find((x) => x.id === m.uid);
+    const av = m.av || (mu && mu.av) || 0;
+    html += `<div class="msg${m.uid === (S.me && S.me.id) ? ' me' : ''}"><div class="ava" style="width:28px;height:28px;flex:0 0 28px;font-size:12px">${avaInner({ id: m.uid, av, display: m.display, username: m.username })}</div><div class="m"><div class="h"><b>${esc(m.display || m.username)}</b><span class="t">${esc(m.tag || 'Member')}</span><span class="ts">${time(m.ts)}</span></div><div class="txt">${esc(m.body)}</div></div></div>`;
+  }
+  el.innerHTML = html;
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+function panelPeople() {
+  S.panel = 'people';
+  modal('Users', '<div id="peopleList"></div>');
+  renderPeople();
+}
+function renderPeople() {
+  const el = $('peopleList'); if (!el) return;
+  const owner = S.me && S.me.role === 'owner';
+  el.innerHTML = S.users.map((u) => {
+    const isSelf = S.me && u.id === S.me.id;
+    const canEdit = owner && (u.role !== 'owner' || isSelf);
+    const tagOptions = u.role === 'owner'
+      ? '<option>Owner</option><option>Member</option><option>Close Friends</option>'
+      : '<option>Member</option><option>Close Friends</option>';
+    const hw = u.hwidShort
+      ? '<span class="hwidp" title="device linked to this account">hwid ' + esc(u.hwidShort) + '</span>'
+      : '<span class="hwidp" style="color:var(--mut2)">no hwid</span>';
+    const canReset = (owner || isSelf) && u.hwidShort;
+    const reset = canReset ? '<button class="ebtn" data-hw="' + esc(u.id) + '">Reset HWID</button>' : '';
+    const del = (owner && u.role !== 'owner') ? '<button class="ebtn danger" data-del="' + esc(u.id) + '">Delete</button>' : '';
+    const msg = !isSelf ? '<button class="ebtn" data-msg="' + esc(u.id) + '">Message</button>' : '';
+    const right = canEdit
+      ? '<select class="sel" data-tag="' + esc(u.id) + '">' + tagOptions + '</select>'
+      : '<span style="font-size:10px;color:var(--acc);background:var(--accsoft);border-radius:20px;padding:2px 9px;white-space:nowrap">' + esc(u.tag || 'Member') + '</span>';
+    return '<div class="urow"><div class="ava" style="width:32px;height:32px;flex:0 0 32px;font-size:13px">' + avaInner(u) + '</div>' +
+      '<div class="m"><b>' + esc(u.display || u.username) + ' <span style="color:var(--mut);font-weight:400">@' + esc(u.username) + '</span></b><span>' + esc(u.bio || '') + '</span></div>' +
+      hw + right + msg + reset + del + '<span class="dot ' + (u.online ? 'on' : '') + '" style="margin-left:6px"></span></div>';
+  }).join('');
+  el.querySelectorAll('button[data-msg]').forEach((b) => {
+    b.onclick = () => {
+      const u = S.users.find((x) => x.id === b.dataset.msg);
+      if (u) dmCompose(u);
+    };
+  });
+  el.querySelectorAll('button[data-hw]').forEach((b) => {
+    b.onclick = async () => {
+      try { await api('/users/' + b.dataset.hw, { method: 'PATCH', body: { resetHwid: true } }); await refreshUsers(); renderPeople(); toast('hwid reset'); }
+      catch (e) { toast(e.message); }
+    };
+  });
+  el.querySelectorAll('button[data-del]').forEach((b) => {
+    b.onclick = async () => {
+      if (!window.confirm('Delete this account permanently?')) return;
+      try { await api('/users/' + b.dataset.del, { method: 'DELETE' }); await refreshUsers(); renderPeople(); toast('account deleted'); }
+      catch (e) { toast(e.message); }
+    };
+  });
+  el.querySelectorAll('select[data-tag]').forEach((sel) => {
+    const u = S.users.find((x) => x.id === sel.dataset.tag);
+    sel.value = (u && u.tag) || 'Member';
+    sel.onchange = async () => {
+      try { await api('/users/' + sel.dataset.tag, { method: 'PATCH', body: { tag: sel.value } }); await refreshUsers(); renderPeople(); toast('tag updated'); }
+      catch (e) { toast(e.message); }
+    };
+  });
+}
+async function refreshUsers() { try { S.users = await api('/users'); if (S.panel === 'people') renderPeople(); } catch {} }
+
+/* ---- user card ---- */
+function renderUser() {
+  const m = S.me; if (!m) return;
+  $('ucard').innerHTML = '<div class="ava">' + avaInner(m) + '</div><div class="m"><b>' + esc(m.display || m.username) + '</b><span>' + esc(m.tag || 'Member') + '</span></div><span class="dot ' + (S.connected ? 'on' : '') + '"></span>';
+  $('ucard').onclick = () => go('profile');
+}
+function avatarURL(u) { return u.av ? '/api/avatar/' + encodeURIComponent(u.id) + '?v=' + u.av : ''; }
+function avaInner(u) {
+  const url = u && u.av ? avatarURL(u) : '';
+  if (url) return '<img src="' + url + '" alt="">';
+  return esc(((u && (u.display || u.username)) || '?').slice(0, 1).toUpperCase());
+}
+function keyName(vk) {
+  for (const g of KEYS) for (const kv of g.k) if (kv[1] === +vk) return kv[0];
+  return 'Key ' + vk;
+}
+/* downscale+square-crop an uploaded image to a small JPEG data URL */
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const S1 = 144, c = document.createElement('canvas'); c.width = S1; c.height = S1;
+        const ctx = c.getContext('2d');
+        const s = Math.min(img.width, img.height);
+        ctx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, S1, S1);
+        res(c.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = rej; img.src = fr.result;
+    };
+    fr.onerror = rej; fr.readAsDataURL(file);
+  });
+}
+function clientStatus() {
+  const s = st.s('client.state') || 'offline';
+  const el = $('cliStat'); if (!el) return;
+  el.textContent = 'client: ' + s;
+  el.style.color = s === 'injected' ? 'var(--ok)' : (s === 'unloaded' ? 'var(--warn)' : 'var(--mut)');
+}
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function time(ts) { const d = new Date(ts || Date.now()); return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0'); }
+
+/* ---- toasts ---- */
+function toast(msg) {
+  if (S.panel === 'chat' && /:/.test(msg)) return;
+  const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg;
+  $('toasts').appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = '.3s'; setTimeout(() => el.remove(), 320); }, 2600);
+}
+
+/* client controls in the header */
+$('btnLoad').onclick = () => sendCmd('load');
+$('btnUnload').onclick = () => sendCmd('unload');
+
+/* mobile nav toggle */
+$('burger').onclick = () => { $('sidebar').classList.toggle('open'); };
+$('title').onclick = () => { if (innerWidth <= 820) $('sidebar').classList.toggle('open'); };
+</script>
+</body>
+</html>

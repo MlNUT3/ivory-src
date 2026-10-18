@@ -1,0 +1,2427 @@
+#include "headers/includes.h"
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include "data/IconsFontAwesome6.h"
+#include "data/IconsV2_Defines.h"
+#include "widgets/watermark.h"
+#include "widgets/keybinds.h"
+#include "widgets/playerbar.h"
+#include "widgets/musicplayer.h"
+#include "widgets/playerlist.h"
+#include "deezer/deezer.h"
+#include "data/images.h"
+
+static void draw_header_title(ImDrawList* dl, ImFont* font, float size, const ImVec2& pos, ImU32 col, const char* title, float tracking)
+{
+	char up[64];
+	size_t n = 0;
+	for (; title && title[n] && n + 1 < sizeof(up); n++)
+		up[n] = (char)toupper((unsigned char)title[n]);
+	up[n] = 0;
+
+	float x = pos.x;
+	for (const char* p = up; *p; ++p)
+	{
+		char one[2] = { *p, 0 };
+		dl->AddText(font, size, ImVec2(x, pos.y), col, one);
+		x += font->CalcTextSizeA(size, FLT_MAX, 0.0f, one).x + tracking;
+	}
+}
+
+// persistent menu state - file scope so save/load can reach it
+static bool  test_checks[7][16] = { false };
+static int   test_sliders[7][16] = { 0 };
+static int   test_dropdowns[7][16] = { 0 };
+static int   bind_key[7][4] = { 0 };    // vk code, -1 = unbound
+static int   bind_mode[7][4] = { 0 };   // 0 hold, 1 toggle, 2 always
+static float test_colors[7][20][4] = {
+	{
+		{1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f},
+		{1.0f, 0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 0.5f, 0.0f, 1.0f}, {0.5f, 0.0f, 1.0f, 1.0f}
+	},
+	{
+		{0.8f, 0.2f, 0.2f, 1.0f}, {0.2f, 0.8f, 0.2f, 1.0f}, {0.2f, 0.2f, 0.8f, 1.0f}, {0.8f, 0.8f, 0.2f, 1.0f},
+		{0.8f, 0.2f, 0.8f, 1.0f}, {0.2f, 0.8f, 0.8f, 1.0f}, {0.8f, 0.5f, 0.2f, 1.0f}, {0.5f, 0.2f, 0.8f, 1.0f}
+	},
+	{
+		{0.6f, 0.1f, 0.1f, 1.0f}, {0.1f, 0.6f, 0.1f, 1.0f}, {0.1f, 0.1f, 0.6f, 1.0f}, {0.6f, 0.6f, 0.1f, 1.0f},
+		{0.6f, 0.1f, 0.6f, 1.0f}, {0.1f, 0.6f, 0.6f, 1.0f}, {0.6f, 0.3f, 0.1f, 1.0f}, {0.3f, 0.1f, 0.6f, 1.0f}
+	},
+	{
+		{0.9f, 0.3f, 0.3f, 1.0f}, {0.3f, 0.9f, 0.3f, 1.0f}, {0.3f, 0.3f, 0.9f, 1.0f}, {0.9f, 0.9f, 0.3f, 1.0f},
+		{0.9f, 0.3f, 0.9f, 1.0f}, {0.3f, 0.9f, 0.9f, 1.0f}, {0.9f, 0.6f, 0.3f, 1.0f}, {0.6f, 0.3f, 0.9f, 1.0f}
+	},
+	// Tab 4: Colors
+	{
+		{143.0f/255.0f, 200.0f/255.0f, 255.0f/255.0f, 1.0f},
+		{1.0f, 0.2f, 0.2f, 1.0f}, {0.2f, 1.0f, 0.2f, 1.0f}, {1.0f, 1.0f, 0.2f, 1.0f},
+		{0.2f, 0.8f, 1.0f, 1.0f}, {1.0f, 0.2f, 0.8f, 1.0f}, {0.8f, 1.0f, 0.2f, 1.0f}, {1.0f, 0.5f, 0.0f, 1.0f},
+		{0.6f, 0.2f, 1.0f, 1.0f}, {1.0f, 0.2f, 0.2f, 0.5f}, {0.2f, 1.0f, 0.5f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f},
+		{1.0f, 0.8f, 0.2f, 1.0f}, {0.2f, 0.5f, 1.0f, 1.0f}, {1.0f, 0.3f, 0.8f, 1.0f},
+		{143.0f/255.0f, 200.0f/255.0f, 255.0f/255.0f, 1.0f},
+		{0.3f, 0.9f, 0.9f, 1.0f}, {1.0f, 0.5f, 0.2f, 1.0f}, {1.0f, 0.2f, 0.2f, 1.0f}, {0.5f, 0.5f, 0.8f, 1.0f}
+	},
+	{}
+};
+
+// defaults snapshot taken on first run, used by "reset to default"
+static bool  defaults_captured = false;
+static bool  def_checks[7][16] = { false };
+static int   def_sliders[7][16] = { 0 };
+static int   def_dropdowns[7][16] = { 0 };
+static float def_colors[7][20][4] = {};
+
+static bool boot_config_loaded = false;
+
+static std::string config_dir()
+{
+    char base[MAX_PATH] = {};
+    DWORD n = GetEnvironmentVariableA("APPDATA", base, MAX_PATH);
+    std::string dir = (n > 0 && n < MAX_PATH) ? std::string(base) : std::string();
+    if (!dir.empty())
+    {
+        if (dir.back() != '\\') dir += '\\';
+        dir += "Vade\\";
+        CreateDirectoryA(dir.c_str(), nullptr);
+        DWORD attr = GetFileAttributesA(dir.c_str());
+        if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+            return dir;
+    }
+
+    char tmp[MAX_PATH] = {};
+    if (GetTempPathA(MAX_PATH, tmp))
+    {
+        dir = std::string(tmp) + "vade\\";
+        CreateDirectoryA(dir.c_str(), nullptr);
+        return dir;
+    }
+    return std::string();
+}
+
+static std::string config_path(int slot)
+{
+    char name[32];
+    sprintf_s(name, "slot%d.cfg", slot);
+    return config_dir() + name;
+}
+
+static std::string export_path()
+{
+    return config_dir() + "export.cfg";
+}
+
+static void write_boot_cfg(int slot, bool auto_load)
+{
+    FILE* b = nullptr;
+    if (fopen_s(&b, (config_dir() + "boot.cfg").c_str(), "wb"))
+        return;
+
+    fprintf(b, "slot=%d\n", slot);
+    fprintf(b, "auto_load=%d\n", auto_load ? 1 : 0);
+    fclose(b);
+}
+
+bool c_gui::save_config(int slot)
+{
+    if (slot < 1 || slot > 5)
+        return false;
+
+    FILE* f = nullptr;
+    if (fopen_s(&f, config_path(slot).c_str(), "wb"))
+        return false;
+
+    fprintf(f, "vade=1\n");
+    fprintf(f, "auto_load=%d\n", cfg_auto_load ? 1 : 0);
+    fprintf(f, "save_on_exit=%d\n", cfg_save_on_exit ? 1 : 0);
+    fprintf(f, "win.rounding=%.3f\n", elements->window.rounding);
+
+    for (int t = 0; t < 7; t++)
+    {
+        for (int i = 0; i < 16; i++)
+            fprintf(f, "chk.%d.%d=%d\n", t, i, test_checks[t][i] ? 1 : 0);
+
+        for (int i = 0; i < 16; i++)
+            fprintf(f, "sld.%d.%d=%d\n", t, i, test_sliders[t][i]);
+
+        for (int i = 0; i < 16; i++)
+            fprintf(f, "ddn.%d.%d=%d\n", t, i, test_dropdowns[t][i]);
+
+        for (int i = 0; i < 4; i++)
+            fprintf(f, "kbd.%d.%d=%d,%d\n", t, i, bind_key[t][i], bind_mode[t][i]);
+
+        for (int i = 0; i < 20; i++)
+            for (int c = 0; c < 4; c++)
+                fprintf(f, "clr.%d.%d.%d=%.5f\n", t, i, c, test_colors[t][i][c]);
+    }
+
+    fprintf(f, "show.watermark=%d\n", var->gui.show_watermark ? 1 : 0);
+    fprintf(f, "show.hotkeys=%d\n", var->gui.show_active_hotkeys ? 1 : 0);
+    fprintf(f, "show.playerbar=%d\n", var->gui.show_playerbar ? 1 : 0);
+    fprintf(f, "show.playerlist=%d\n", var->gui.show_playerlist ? 1 : 0);
+    fprintf(f, "show.musicplayer=%d\n", var->gui.show_spotify ? 1 : 0);
+
+    for (const auto& kb : keybinds->items())
+        fprintf(f, "kbn=%s|%d|%d|%d\n", kb.name.c_str(), kb.key, (int)kb.mode, kb.active ? 1 : 0);
+
+    fclose(f);
+
+    cfg_slot = slot;
+    write_boot_cfg(slot, cfg_auto_load);
+    return true;
+}
+
+bool c_gui::load_config(int slot)
+{
+    if (slot < 1 || slot > 5)
+        return false;
+
+    FILE* f = nullptr;
+    if (fopen_s(&f, config_path(slot).c_str(), "rb"))
+        return false;
+
+    char line[192];
+    while (fgets(line, (int)sizeof(line), f))
+    {
+        line[strcspn(line, "\r\n")] = 0;
+
+        char* eq = strchr(line, '=');
+        if (!eq || eq == line)
+            continue;
+
+        *eq = 0;
+        const char* k = line;
+        const char* v = eq + 1;
+
+        int a = 0, b = 0, c = 0;
+
+        if (sscanf_s(k, "chk.%d.%d", &a, &b) == 2 && a < 7 && b < 16)
+            test_checks[a][b] = atoi(v) != 0;
+        else if (sscanf_s(k, "sld.%d.%d", &a, &b) == 2 && a < 7 && b < 16)
+            test_sliders[a][b] = atoi(v);
+        else if (sscanf_s(k, "ddn.%d.%d", &a, &b) == 2 && a < 7 && b < 16)
+            test_dropdowns[a][b] = atoi(v);
+        else if (sscanf_s(k, "kbd.%d.%d", &a, &b) == 2 && a < 7 && b < 4)
+        {
+            int key = -1, mode = 0;
+            if (sscanf_s(v, "%d,%d", &key, &mode) == 2)
+            {
+                bind_key[a][b] = key;
+                bind_mode[a][b] = mode;
+            }
+        }
+        else if (sscanf_s(k, "clr.%d.%d.%d", &a, &b, &c) == 3 && a < 7 && b < 20 && c < 4)
+            test_colors[a][b][c] = (float)atof(v);
+        else if (strcmp(k, "auto_load") == 0)
+            cfg_auto_load = atoi(v) != 0;
+        else if (strcmp(k, "save_on_exit") == 0)
+            cfg_save_on_exit = atoi(v) != 0;
+        else if (strcmp(k, "win.rounding") == 0)
+            elements->window.rounding = (float)atof(v);
+        else if (strcmp(k, "show.watermark") == 0)
+            var->gui.show_watermark = atoi(v) != 0;
+        else if (strcmp(k, "show.hotkeys") == 0)
+            var->gui.show_active_hotkeys = atoi(v) != 0;
+        else if (strcmp(k, "show.playerbar") == 0)
+            var->gui.show_playerbar = atoi(v) != 0;
+        else if (strcmp(k, "show.playerlist") == 0)
+            var->gui.show_playerlist = atoi(v) != 0;
+        else if (strcmp(k, "show.musicplayer") == 0)
+            var->gui.show_spotify = atoi(v) != 0;
+        else if (strcmp(k, "kbn") == 0)
+        {
+            char nm[64] = {};
+            int kd = 0, md = 0, ac = 0;
+            if (sscanf_s(v, "%63[^|]|%d|%d|%d", nm, (unsigned)_countof(nm), &kd, &md, &ac) == 4)
+            {
+                for (auto& item : keybinds->items())
+                {
+                    if (item.name == nm)
+                    {
+                        item.key    = kd;
+                        item.mode   = (keybind_mode)md;
+                        item.active = ac != 0;
+                    }
+                }
+            }
+        }
+    }
+
+    fclose(f);
+    cfg_slot = slot;
+    return true;
+}
+
+void c_gui::delete_config(int slot)
+{
+    if (slot < 1 || slot > 5)
+        return;
+
+    DeleteFileA(config_path(slot).c_str());
+
+    if (cfg_slot == slot)
+        write_boot_cfg(slot, cfg_auto_load);
+}
+
+void c_gui::reset_defaults()
+{
+    if (!defaults_captured)
+        return;
+
+    memcpy(test_checks, def_checks, sizeof(def_checks));
+    memcpy(test_sliders, def_sliders, sizeof(def_sliders));
+    memcpy(test_dropdowns, def_dropdowns, sizeof(def_dropdowns));
+    memcpy(test_colors, def_colors, sizeof(def_colors));
+
+    memset(bind_key, 0, sizeof(bind_key));
+    memset(bind_mode, 0, sizeof(bind_mode));
+}
+
+void c_gui::boot_config()
+{
+    if (boot_config_loaded)
+        return;
+
+    boot_config_loaded = true;
+
+    memcpy(def_checks, test_checks, sizeof(def_checks));
+    memcpy(def_sliders, test_sliders, sizeof(def_sliders));
+    memcpy(def_dropdowns, test_dropdowns, sizeof(def_dropdowns));
+    memcpy(def_colors, test_colors, sizeof(def_colors));
+    defaults_captured = true;
+
+    if (keybinds)
+        keybinds->seed_defaults();
+
+    int slot = cfg_slot;
+    bool auto_load = cfg_auto_load;
+
+    FILE* b = nullptr;
+    if (!fopen_s(&b, (config_dir() + "boot.cfg").c_str(), "rb"))
+    {
+        char line[64];
+        while (fgets(line, (int)sizeof(line), b))
+        {
+            line[strcspn(line, "\r\n")] = 0;
+
+            int s = 0;
+            if (sscanf_s(line, "slot=%d", &s) == 1 && s >= 1 && s <= 5)
+                slot = s;
+            else if (sscanf_s(line, "auto_load=%d", &s) == 1)
+                auto_load = s != 0;
+        }
+        fclose(b);
+    }
+
+    cfg_slot = slot;
+    cfg_auto_load = auto_load;
+
+    if (cfg_auto_load)
+        load_config(cfg_slot);
+}
+
+void c_gui::render()
+{
+	gui->easing(var->gui.watermark_spawn_alpha,      var->gui.show_watermark       ? 1.0f : 0.0f, 8.0f, dynamic_easing);
+	gui->easing(var->gui.active_hotkeys_spawn_alpha, var->gui.show_active_hotkeys  ? 1.0f : 0.0f, 4.0f, dynamic_easing);
+	gui->easing(var->gui.playerbar_spawn_alpha,      var->gui.show_playerbar       ? 1.0f : 0.0f, 8.0f, dynamic_easing);
+	gui->easing(var->gui.spotify_spawn_alpha,        var->gui.show_spotify         ? 1.0f : 0.0f, 8.0f, dynamic_easing);
+	gui->easing(var->gui.playerlist_spawn_alpha,     var->gui.show_playerlist      ? 1.0f : 0.0f, 8.0f, dynamic_easing);
+
+	deezer->update();
+
+	// binds must keep responding even when the overlay is hidden
+	keybinds->update();
+
+	if (!var->gui.menu_open)
+	{
+		var->gui.menu_was_closed = true;
+		if (var->gui.watermark_spawn_alpha > 0.001f)  watermark->render();
+		if (var->gui.active_hotkeys_spawn_alpha > 0.001f) keybinds->render();
+		if (var->gui.playerbar_spawn_alpha > 0.001f)  playerbar->render();
+		if (var->gui.spotify_spawn_alpha > 0.001f)    { musicplayer->update(); musicplayer->render(); }
+		if (var->gui.playerlist_spawn_alpha > 0.001f) playerlist->render();
+		return;
+	}
+
+	if (var->gui.menu_was_closed)
+	{
+		var->gui.menu_open_alpha = 0.0f;
+		var->gui.menu_was_closed = false;
+	}
+
+	try
+	{
+		gui->easing(var->gui.menu_open_alpha, 1.0f, 6.0f, dynamic_easing);
+
+		float scale_progress = var->gui.menu_open_alpha;
+		scale_progress = scale_progress * scale_progress;
+		float menu_scale = 0.85f + (scale_progress * 0.15f);
+
+		// Load pattern texture if not loaded yet
+		static bool pattern_loaded = false;
+		static bool pattern_load_attempted = false;
+		if (!pattern_load_attempted)
+		{
+			try {
+				LoadPatternTexture();
+				pattern_loaded = true;
+			}
+			catch (...) {
+				// Pattern loading failed, continue without pattern
+				pattern_loaded = false;
+			}
+			pattern_load_attempted = true;
+		}
+
+		gui->initialize();
+		gui->set_next_window_size(SCALE(elements->window.size));
+		gui->begin(elements->window.name, nullptr, window_flags_no_scrollbar | window_flags_no_scroll_with_mouse | window_flags_no_bring_to_front_on_focus | window_flags_no_focus_on_appearing | window_flags_no_background | window_flags_no_decoration);
+		{
+			c_window* window = gui->get_window();
+			c_vec2 pos = window->Pos;
+			c_vec2 size = window->Size;
+
+			var->gui.menu_rect_min = ImVec2(pos.x, pos.y);
+			var->gui.menu_rect_size = ImVec2(size.x, size.y);
+			var->gui.menu_rect_valid = true;
+
+			ImVec2 menu_center = ImVec2(pos.x + size.x * 0.5f, pos.y + size.y * 0.5f);
+			ImVec2 scaled_pos = ImVec2(
+				menu_center.x + (pos.x - menu_center.x) * menu_scale,
+				menu_center.y + (pos.y - menu_center.y) * menu_scale
+			);
+			ImVec2 scaled_size = ImVec2(size.x * menu_scale, size.y * menu_scale);
+
+			c_rect rect = c_rect(scaled_pos, scaled_pos + scaled_size);
+			c_draw_list* draw_list = gui->background_drawlist();
+
+			float menu_shadow_blur = SCALE(12.0f);
+			for (int s = 0; s < 6; s++)
+			{
+				float progress = (float)s / 6.0f;
+				float alpha = (1.0f - progress) * 0.35f * var->gui.menu_open_alpha;
+				float blur_amount = menu_shadow_blur * progress;
+				ImVec2 shadow_min = ImVec2(scaled_pos.x - blur_amount, scaled_pos.y - blur_amount);
+				ImVec2 shadow_max = ImVec2(scaled_pos.x + scaled_size.x + blur_amount, scaled_pos.y + scaled_size.y + blur_amount);
+
+				draw_list->AddRectFilled(
+					shadow_min,
+					shadow_max,
+					IM_COL32(0, 0, 0, (int)(alpha * 255)),
+					SCALE(elements->window.rounding) + blur_amount
+				);
+			}
+
+			draw_list->PushClipRect(scaled_pos, ImVec2(scaled_pos.x + scaled_size.x, scaled_pos.y + scaled_size.y), true);
+
+			ImVec4 bg_top = ImVec4(34.0f / 255.0f, 36.0f / 255.0f, 41.0f / 255.0f, 0.52f * var->gui.menu_open_alpha);
+			ImVec4 bg_bottom = ImVec4(14.0f / 255.0f, 15.0f / 255.0f, 18.0f / 255.0f, 0.58f * var->gui.menu_open_alpha);
+
+			draw_list->AddRectFilled(
+				scaled_pos,
+				ImVec2(scaled_pos.x + scaled_size.x, scaled_pos.y + scaled_size.y),
+				draw->get_clr(bg_bottom),
+				SCALE(elements->window.rounding)
+			);
+
+			draw_list->AddRectFilledMultiColor(
+				scaled_pos,
+				ImVec2(scaled_pos.x + scaled_size.x, scaled_pos.y + scaled_size.y),
+				draw->get_clr(bg_top),
+				draw->get_clr(bg_top),
+				draw->get_clr(bg_bottom),
+				draw->get_clr(bg_bottom)
+			);
+
+			// aurora wash - blue and lilac blooms drifting under the glass
+			{
+				const float t = (float)ImGui::GetTime();
+				const float fade = var->gui.menu_open_alpha;
+
+				struct blob_t { float ox, oy, ax, ay, spd, phase, rad, a; int r, g, b; };
+				static const blob_t blobs[] = {
+					{ 0.22f, 0.26f, 0.13f, 0.09f, 0.17f, 0.0f, 0.68f, 0.55f, 143, 200, 255 },
+					{ 0.80f, 0.30f, 0.11f, 0.11f, 0.13f, 2.2f, 0.74f, 0.46f, 201, 168, 255 },
+					{ 0.56f, 0.78f, 0.15f, 0.10f, 0.10f, 4.1f, 0.70f, 0.40f, 143, 200, 255 },
+					{ 0.30f, 0.64f, 0.12f, 0.13f, 0.15f, 5.6f, 0.58f, 0.36f, 201, 168, 255 }
+				};
+
+				const int rings = 14;
+				float ring_norm = 0.0f;
+				for (int k = 1; k <= rings; k++)
+					ring_norm += (1.0f - (float)(k - 1) / rings);
+
+				for (const auto& bl : blobs)
+				{
+					const ImVec2 c = ImVec2(
+						scaled_pos.x + scaled_size.x * (bl.ox + sinf(t * bl.spd + bl.phase) * bl.ax),
+						scaled_pos.y + scaled_size.y * (bl.oy + cosf(t * bl.spd * 0.87f + bl.phase) * bl.ay));
+					const float r = bl.rad * scaled_size.x;
+					const float base = (bl.a * fade) / ring_norm;
+
+					for (int k = rings; k >= 1; k--)
+					{
+						const int a = (int)(base * (1.0f - (float)(k - 1) / rings) * 255.0f);
+						if (a < 1)
+							continue;
+
+						draw_list->AddCircleFilled(c, r * ((float)k / rings),
+							IM_COL32(bl.r, bl.g, bl.b, a), 48);
+					}
+				}
+
+				draw_list->AddRectFilledMultiColor(
+					scaled_pos,
+					ImVec2(scaled_pos.x + scaled_size.x, scaled_pos.y + scaled_size.y),
+					IM_COL32(10, 11, 14, (int)(30 * fade)),
+					IM_COL32(10, 11, 14, (int)(30 * fade)),
+					IM_COL32(6, 7, 9, (int)(54 * fade)),
+					IM_COL32(6, 7, 9, (int)(54 * fade)));
+
+				const ImVec2 v0 = scaled_pos;
+				const ImVec2 v1 = ImVec2(scaled_pos.x + scaled_size.x, scaled_pos.y + scaled_size.y);
+				const float vw = scaled_size.x * 0.17f;
+				const float vh = scaled_size.y * 0.17f;
+				const int va = (int)(66 * fade);
+
+				draw_list->AddRectFilledMultiColor(
+					ImVec2(v0.x, v0.y), ImVec2(v1.x, v0.y + vh),
+					IM_COL32(4, 5, 7, va), IM_COL32(4, 5, 7, va),
+					IM_COL32(4, 5, 7, 0), IM_COL32(4, 5, 7, 0));
+				draw_list->AddRectFilledMultiColor(
+					ImVec2(v0.x, v1.y - vh), ImVec2(v1.x, v1.y),
+					IM_COL32(4, 5, 7, 0), IM_COL32(4, 5, 7, 0),
+					IM_COL32(4, 5, 7, va), IM_COL32(4, 5, 7, va));
+				draw_list->AddRectFilledMultiColor(
+					ImVec2(v0.x, v0.y), ImVec2(v0.x + vw, v1.y),
+					IM_COL32(4, 5, 7, va), IM_COL32(4, 5, 7, 0),
+					IM_COL32(4, 5, 7, 0), IM_COL32(4, 5, 7, va));
+				draw_list->AddRectFilledMultiColor(
+					ImVec2(v1.x - vw, v0.y), ImVec2(v1.x, v1.y),
+					IM_COL32(4, 5, 7, 0), IM_COL32(4, 5, 7, va),
+					IM_COL32(4, 5, 7, va), IM_COL32(4, 5, 7, 0));
+			}
+
+			{
+				int gw = 0, gh = 0;
+				ID3D11ShaderResourceView* grain = GetGrainTexture(&gw, &gh);
+				if (grain)
+				{
+					const float gr = SCALE(elements->window.rounding);
+					draw_list->AddImage((ImTextureID)grain,
+						ImVec2(scaled_pos.x + gr, scaled_pos.y + gr),
+						ImVec2(scaled_pos.x + scaled_size.x - gr, scaled_pos.y + scaled_size.y - gr),
+						ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f),
+						IM_COL32(255, 255, 255, (int)(255 * var->gui.menu_open_alpha)));
+				}
+			}
+
+			{
+				const float br = SCALE(elements->window.rounding);
+				const int bounce = (int)(34 * var->gui.menu_open_alpha);
+				draw_list->AddRectFilledMultiColor(
+					ImVec2(scaled_pos.x + br, scaled_pos.y + scaled_size.y - SCALE(7.0f)),
+					ImVec2(scaled_pos.x + scaled_size.x - br, scaled_pos.y + scaled_size.y - SCALE(1.0f)),
+					IM_COL32(143, 200, 255, 0), IM_COL32(143, 200, 255, 0),
+					IM_COL32(143, 200, 255, bounce), IM_COL32(143, 200, 255, bounce));
+			}
+
+			draw_list->PopClipRect();
+
+			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, var->gui.menu_open_alpha);
+
+			float tabbar_height = SCALE(45.0f);
+			ImVec2 tabbar_start = scaled_pos;
+			ImVec2 tabbar_end = ImVec2(scaled_pos.x + scaled_size.x, scaled_pos.y + tabbar_height);
+
+			draw_list->PushClipRect(tabbar_start, tabbar_end, true);
+
+			ImVec4 tabbar_top = ImVec4(66.0f / 255.0f, 68.0f / 255.0f, 72.0f / 255.0f, 0.68f);
+			ImVec4 tabbar_bottom = ImVec4(58.0f / 255.0f, 60.0f / 255.0f, 64.0f / 255.0f, 0.68f);
+
+			draw_list->AddRectFilled(
+				tabbar_start,
+				tabbar_end,
+				draw->get_clr(tabbar_bottom),
+				SCALE(elements->window.rounding),
+				ImDrawFlags_RoundCornersTop
+			);
+
+			draw_list->AddRectFilledMultiColor(
+				tabbar_start,
+				tabbar_end,
+				draw->get_clr(tabbar_top),
+				draw->get_clr(tabbar_top),
+				draw->get_clr(tabbar_bottom),
+				draw->get_clr(tabbar_bottom)
+			);
+
+			{
+				const float tr = SCALE(elements->window.rounding);
+				const int sheen = (int)(72 * var->gui.menu_open_alpha);
+				draw_list->AddRectFilledMultiColor(
+					ImVec2(tabbar_start.x + tr, tabbar_start.y),
+					ImVec2(tabbar_end.x - tr, tabbar_start.y + SCALE(2.5f)),
+					IM_COL32(255, 255, 255, sheen), IM_COL32(255, 255, 255, sheen),
+					IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0));
+			}
+
+			draw_list->PopClipRect();
+
+			// base outline + a light runner chasing the perimeter
+			{
+				const float fade = var->gui.menu_open_alpha;
+				const ImVec2 b0 = scaled_pos;
+				const ImVec2 b1 = ImVec2(scaled_pos.x + scaled_size.x, scaled_pos.y + scaled_size.y);
+				const float R = SCALE(elements->window.rounding);
+				const float bw = SCALE(2.5f);
+				const int slices = 6;
+
+				draw_list->AddRect(b0, b1,
+					IM_COL32(143, 200, 255, (int)(44 * fade)), R, 0, SCALE(1.5f));
+
+				const float p = fmodf((float)ImGui::GetTime() * 0.38f, 4.0f);
+
+				auto runner = [&](float g)
+				{
+					float d = fmodf(g - p + 4.0f, 4.0f);
+					if (d > 2.0f) d = 4.0f - d;
+					return expf(-(d * d) / 0.016f);
+				};
+
+				auto band_col = [&](float g)
+				{
+					const float a = (0.11f + 0.80f * g) * fade;
+					const float w = 0.60f * g;
+					return IM_COL32(
+						(int)(143 + (238 - 143) * w),
+						(int)(200 + (250 - 200) * w),
+						255,
+						(int)(a * 255));
+				};
+
+				auto horiz = [&](float y, float x0, float x1, float g_offset, bool reversed)
+				{
+					const float span = x1 - x0;
+					for (int i = 0; i < slices; i++)
+					{
+						const float u0 = (float)i / slices;
+						const float u1 = (float)(i + 1) / slices;
+						const float g0 = runner(reversed ? (g_offset + 1.0f - u0) : (g_offset + u0));
+						const float g1 = runner(reversed ? (g_offset + 1.0f - u1) : (g_offset + u1));
+						draw_list->AddRectFilledMultiColor(
+							ImVec2(x0 + span * u0, y), ImVec2(x0 + span * u1, y + bw),
+							band_col(g0), band_col(g1), band_col(g1), band_col(g0));
+					}
+				};
+
+				auto vert = [&](float x, float y0, float y1, float g_offset, bool reversed)
+				{
+					const float span = y1 - y0;
+					for (int i = 0; i < slices; i++)
+					{
+						const float u0 = (float)i / slices;
+						const float u1 = (float)(i + 1) / slices;
+						const float g0 = runner(reversed ? (g_offset + 1.0f - u0) : (g_offset + u0));
+						const float g1 = runner(reversed ? (g_offset + 1.0f - u1) : (g_offset + u1));
+						draw_list->AddRectFilledMultiColor(
+							ImVec2(x, y0 + span * u0), ImVec2(x + bw, y0 + span * u1),
+							band_col(g0), band_col(g0), band_col(g1), band_col(g1));
+					}
+				};
+
+				horiz(b0.y, b0.x + R, b1.x - R, 0.0f, false);
+				vert(b1.x - bw, b0.y + R, b1.y - R, 1.0f, false);
+				horiz(b1.y - bw, b0.x + R, b1.x - R, 2.0f, true);
+				vert(b0.x, b0.y + R, b1.y - R, 3.0f, true);
+			}
+
+			{
+				const char* logo_text = "Vade";
+				ImFont* logo_font = font->get(main_font_data, 18.0f);
+				if (logo_font)
+				{
+					ImVec2 logo_size = logo_font->CalcTextSizeA(18.0f, FLT_MAX, 0.0f, logo_text);
+					ImVec2 logo_pos = ImVec2(
+						tabbar_start.x + SCALE(20.0f),
+						tabbar_start.y + (tabbar_height - logo_size.y) * 0.5f
+					);
+
+					for (int g = 10; g > 0; g--)
+					{
+						float glow_alpha = (g / 10.0f) * 0.4f * var->gui.menu_open_alpha;
+						float glow_offset = SCALE(g * 0.8f);
+
+						draw_list->AddText(logo_font, 18.0f,
+							ImVec2(logo_pos.x, logo_pos.y),
+							IM_COL32(143, 200, 255, (int)(glow_alpha * 255)),
+							logo_text);
+					}
+
+					draw_list->AddText(logo_font, 18.0f,
+						ImVec2(logo_pos.x + SCALE(1.0f), logo_pos.y + SCALE(1.0f)),
+						IM_COL32(0, 0, 0, (int)(100 * var->gui.menu_open_alpha)),
+						logo_text);
+
+					draw_list->AddText(logo_font, 18.0f, logo_pos,
+						draw->get_clr(ImVec4(143.0f / 255.0f, 200.0f / 255.0f, 255.0f / 255.0f, var->gui.menu_open_alpha)),
+						logo_text);
+
+					draw_list->PushClipRect(logo_pos, ImVec2(logo_pos.x + logo_size.x, logo_pos.y + logo_size.y * 0.3f), true);
+					draw_list->AddText(logo_font, 18.0f, logo_pos,
+						draw->get_clr(ImVec4(240.0f / 255.0f, 250.0f / 255.0f, 255.0f / 255.0f, 0.6f * var->gui.menu_open_alpha)),
+						logo_text);
+					draw_list->PopClipRect();
+
+					// active tab name beside the logo, slides in on switch
+					static const char* tab_names[] = {
+						"aimbot", "visuals", "misc", "config", "colors", "settings", "music"
+					};
+					static int last_label_tab = -1;
+					static float label_alpha = 1.0f;
+
+					if (last_label_tab != var->gui.active_tab)
+					{
+						if (last_label_tab >= 0)
+							label_alpha = 0.0f;
+						last_label_tab = var->gui.active_tab;
+					}
+					gui->easing(label_alpha, 1.0f, 8.0f, dynamic_easing);
+
+					ImFont* label_font = font->get(main_font_data, 14.0f);
+					const char* label_text = tab_names[var->gui.active_tab];
+
+					if (label_font && label_alpha > 0.01f)
+					{
+						const float a = label_alpha * var->gui.menu_open_alpha;
+						const ImVec2 lsz = label_font->CalcTextSizeA(14.0f, FLT_MAX, 0.0f, label_text);
+						const float divider_x = logo_pos.x + logo_size.x + SCALE(14.0f);
+						const float text_x = divider_x + SCALE(14.0f) + (1.0f - label_alpha) * SCALE(12.0f);
+
+						draw_list->AddRectFilled(
+							ImVec2(divider_x, tabbar_start.y + SCALE(13.0f)),
+							ImVec2(divider_x + SCALE(1.0f), tabbar_start.y + tabbar_height - SCALE(13.0f)),
+							IM_COL32(143, 200, 255, (int)(120 * a)));
+
+						draw_list->AddText(label_font, 14.0f,
+							ImVec2(text_x, tabbar_start.y + (tabbar_height - lsz.y) * 0.5f),
+							IM_COL32(198, 222, 246, (int)(230 * a)),
+							label_text);
+
+						// small accent tick under the label
+						draw_list->AddRectFilled(
+							ImVec2(text_x, tabbar_start.y + tabbar_height - SCALE(6.0f)),
+							ImVec2(text_x + lsz.x * label_alpha, tabbar_start.y + tabbar_height - SCALE(4.0f)),
+							IM_COL32(143, 200, 255, (int)(170 * a)),
+							SCALE(1.0f));
+					}
+				}
+			}
+
+			ImVec4 accent_color = ImVec4(143.0f / 255.0f, 200.0f / 255.0f, 255.0f / 255.0f, 1.0f);
+
+			const char* tab_icons[] = {
+				"\xEF\x80\x98",    // U+F018 - Aimbot
+				"\xEF\x81\x8B",    // U+F04B - Visuals
+				"\xEF\x80\x8C",    // U+F00C - Misc
+				"\xEF\x80\xAF",    // U+F02F - Configs
+				"\xEF\x81\x94",    // U+F054 - Colors
+				"\xEF\x80\x8D",    // U+F00D - Settings
+				"\xEF\x80\x81"     // U+F001 - Music
+			};
+			int tab_count = 7;
+
+			float box_size = SCALE(32.0f);
+			float tab_spacing = SCALE(8.0f);
+			float total_tabs_width = (tab_count * box_size) + ((tab_count - 1) * tab_spacing);
+			float tabs_start_x = scaled_pos.x + scaled_size.x - total_tabs_width - SCALE(15.0f);
+
+			ImFont* tab_icon_font = font->get(main_font_data, 16.0f);
+
+			if (tab_icon_font)
+			{
+				for (int i = 0; i < tab_count; i++)
+				{
+					float tab_x = tabs_start_x + (i * (box_size + tab_spacing));
+
+					ImVec2 box_pos = ImVec2(tab_x, scaled_pos.y + (tabbar_height - box_size) / 2.0f);
+					ImVec2 box_end = ImVec2(box_pos.x + box_size, box_pos.y + box_size);
+
+					// Hit detection
+					c_rect tab_rect = c_rect(box_pos, box_end);
+
+					bool hovered = IsMouseHoveringRect(tab_rect.Min, tab_rect.Max, false);
+					bool clicked = hovered && gui->mouse_clicked(0, false);
+
+					if (clicked)
+					{
+						if (var->gui.active_tab != i)
+						{
+							var->gui.active_tab = i;
+							var->gui.tab_transition_alpha = 0.0f;
+						}
+					}
+
+					bool is_active = (i == var->gui.active_tab);
+
+					// per-tab hover / selection easing
+					static float tab_hover[7] = { 0.0f };
+					static float tab_sel[7] = { 0.0f };
+					gui->easing(tab_hover[i], hovered ? 1.0f : 0.0f, 9.0f, dynamic_easing);
+					gui->easing(tab_sel[i], is_active ? 1.0f : 0.0f, 9.0f, dynamic_easing);
+
+					const float sel = tab_sel[i];
+					const float hov = tab_hover[i];
+					const float idle = 1.0f - sel;
+
+					// accent bloom behind the plate
+					if (sel > 0.01f)
+					{
+						draw_list->AddRectFilled(
+							ImVec2(box_pos.x - SCALE(6.0f), box_pos.y - SCALE(6.0f)),
+							ImVec2(box_end.x + SCALE(6.0f), box_end.y + SCALE(6.0f)),
+							IM_COL32(143, 200, 255, (int)(22 * sel)),
+							SCALE(13.0f));
+
+						draw_list->AddRectFilled(
+							ImVec2(box_pos.x - SCALE(3.0f), box_pos.y - SCALE(3.0f)),
+							ImVec2(box_end.x + SCALE(3.0f), box_end.y + SCALE(3.0f)),
+							IM_COL32(143, 200, 255, (int)(50 * sel)),
+							SCALE(9.0f));
+					}
+
+					// frosted glass plate: cool translucent body, denser when active
+					{
+						const float hov_a = hov * idle;
+
+						if (sel > 0.01f || hov_a > 0.01f)
+						{
+							draw->rect_filled_multi_color(draw_list, box_pos, box_end,
+								IM_COL32(255, 255, 255, (int)(38 + 76 * sel + 34 * hov_a)),
+								IM_COL32(255, 255, 255, (int)(30 + 64 * sel + 28 * hov_a)),
+								IM_COL32(143, 200, 255, (int)(52 + 46 * sel + 30 * hov_a)),
+								IM_COL32(143, 200, 255, (int)(44 + 40 * sel + 26 * hov_a)),
+								SCALE(6.0f));
+						}
+
+						const int hl = (int)(116 * sel + 56 * hov_a);
+						if (hl > 0)
+						{
+							draw_list->AddRectFilled(
+								ImVec2(box_pos.x + SCALE(2.0f), box_pos.y + SCALE(2.0f)),
+								ImVec2(box_end.x - SCALE(2.0f), box_pos.y + SCALE(3.5f)),
+								IM_COL32(255, 255, 255, hl),
+								SCALE(1.0f));
+						}
+					}
+
+					// plate border
+					draw_list->AddRect(box_pos, box_end,
+						IM_COL32(
+							(int)(143 + (214 - 143) * sel),
+							(int)(200 + (238 - 200) * sel),
+							255,
+							(int)(48 + 118 * sel + 52 * hov * idle)),
+						SCALE(6.0f), 0, SCALE(1.0f));
+
+					gui->push_font(tab_icon_font);
+
+					ImVec2 icon_size = ImGui::CalcTextSize(tab_icons[i]);
+
+					ImVec2 centered_icon_pos = ImVec2(
+						box_pos.x + (box_size - icon_size.x) * 0.5f,
+						box_pos.y + (box_size - icon_size.y) * 0.5f + SCALE(1.0f)
+					);
+
+					const float m = hov * idle;
+					ImU32 icon_col = IM_COL32(
+						(int)(120 + (176 - 120) * m + (14 - 120) * sel),
+						(int)(120 + (220 - 120) * m + (26 - 120) * sel),
+						(int)(125 + (255 - 125) * m + (40 - 125) * sel),
+						255);
+
+					if (sel > 0.02f)
+					{
+						draw_list->AddText(tab_icon_font, 16.0f,
+							ImVec2(centered_icon_pos.x, centered_icon_pos.y + SCALE(1.0f)),
+							IM_COL32(10, 22, 36, (int)(66 * sel)),
+							tab_icons[i]);
+					}
+
+					draw_list->AddText(tab_icon_font, 16.0f, centered_icon_pos, icon_col, tab_icons[i]);
+
+					gui->pop_font();
+				}
+
+				// sliding selection rail under the active tab
+				{
+					static float rail_x = -1.0f;
+					const float rail_target = tabs_start_x + var->gui.active_tab * (box_size + tab_spacing);
+					if (rail_x < -0.5f)
+						rail_x = rail_target;
+					gui->easing(rail_x, rail_target, 13.0f, dynamic_easing);
+
+					const float rail_y = scaled_pos.y + (tabbar_height + box_size) * 0.5f + SCALE(2.0f);
+
+					draw_list->AddRectFilled(
+						ImVec2(rail_x - SCALE(5.0f), rail_y - SCALE(3.5f)),
+						ImVec2(rail_x + box_size + SCALE(5.0f), rail_y + SCALE(4.5f)),
+						IM_COL32(143, 200, 255, 40),
+						SCALE(4.0f));
+
+					draw_list->AddRectFilled(
+						ImVec2(rail_x, rail_y),
+						ImVec2(rail_x + box_size, rail_y + SCALE(2.5f)),
+						IM_COL32(143, 200, 255, 235),
+						SCALE(1.5f));
+				}
+			}
+
+			float shadow_total_height = SCALE(20.0f);
+			int shadow_layers = 12;
+
+			for (int i = 0; i < shadow_layers; i++)
+			{
+				float layer_progress = (float)i / (float)shadow_layers;
+				float next_progress = (float)(i + 1) / (float)shadow_layers;
+
+				float alpha_start = (1.0f - layer_progress) * (1.0f - layer_progress) * 0.6f * var->gui.menu_open_alpha;
+				float alpha_end = (1.0f - next_progress) * (1.0f - next_progress) * 0.6f * var->gui.menu_open_alpha;
+
+				ImVec2 layer_start = ImVec2(scaled_pos.x, scaled_pos.y + tabbar_height + (shadow_total_height * layer_progress));
+				ImVec2 layer_end = ImVec2(scaled_pos.x + scaled_size.x, scaled_pos.y + tabbar_height + (shadow_total_height * next_progress));
+
+				draw_list->AddRectFilledMultiColor(
+					layer_start,
+					layer_end,
+					draw->get_clr(ImVec4(0.0f, 0.0f, 0.0f, alpha_start)),
+					draw->get_clr(ImVec4(0.0f, 0.0f, 0.0f, alpha_start)),
+					draw->get_clr(ImVec4(0.0f, 0.0f, 0.0f, alpha_end)),
+					draw->get_clr(ImVec4(0.0f, 0.0f, 0.0f, alpha_end))
+				);
+			}
+
+			float content_padding = SCALE(20.0f);
+			float content_y = scaled_pos.y + tabbar_height + SCALE(25.0f);
+			ImVec2 content_pos = ImVec2(scaled_pos.x + content_padding, content_y);
+			float content_width = scaled_size.x - (content_padding * 2);
+			float content_height = scaled_size.y - tabbar_height - SCALE(25.0f) - content_padding;
+
+			gui->easing(var->gui.tab_transition_alpha, 1.0f, 6.0f, dynamic_easing);  // Smooth fade
+
+			float child_spacing = SCALE(15.0f);
+			float child_width = (content_width - child_spacing) / 2.0f;
+			float child_height = (content_height - child_spacing) / 2.0f;
+
+			ImVec4 child_bg_top = ImVec4(76.0f / 255.0f, 78.0f / 255.0f, 82.0f / 255.0f, 0.55f);
+			ImVec4 child_bg_bottom = ImVec4(46.0f / 255.0f, 48.0f / 255.0f, 52.0f / 255.0f, 0.55f);
+
+			ImVec4 child_header_top = ImVec4(72.0f / 255.0f, 74.0f / 255.0f, 78.0f / 255.0f, 0.78f);
+			ImVec4 child_header_bottom = ImVec4(60.0f / 255.0f, 62.0f / 255.0f, 66.0f / 255.0f, 0.78f);
+
+			const char* child_titles[7][4] = {
+				// Tab 0: Aimbot
+				{ "targeting", "smoothing", "recoil", "triggerbot" },
+				// Tab 1: Visuals
+				{ "esp", "chams", "glow", "radar" },
+				// Tab 2: Misc
+				{ "movement", "automation", "exploits", "utilities" },
+		// Tab 3: Config
+		{ "profiles", "preferences", "manage", "overlays" },
+				// Tab 4: Colors
+				{ "colors", "", "", "" },
+				// Tab 5: Settings
+				{ "settings", "", "", "" },
+				// Tab 6: Music
+				{ "music", "", "", "" }
+			};
+
+			float child_header_height = SCALE(40.0f);
+			ImFont* child_title_font = font->get(main_font_data, 15.0f);
+
+			// meta line - right side of every child panel header
+			auto header_meta = [&](const ImVec2& hmin, const ImVec2& hmax, float alpha, const char* mtext)
+			{
+				ImFont* mf = font->get(main_font_data, 11.0f);
+				if (!mf || alpha <= 0.01f || !mtext || !mtext[0])
+					return;
+
+				ImVec2 msz = mf->CalcTextSizeA(11.0f, FLT_MAX, 0.0f, mtext);
+				draw_list->AddText(mf, 11.0f,
+					ImVec2(hmax.x - SCALE(15.0f) - msz.x, hmin.y + (child_header_height - msz.y) * 0.5f),
+					IM_COL32(150, 155, 165, (int)(150 * alpha)),
+					mtext);
+			};
+
+			// accent marker + hairline under every child panel header
+			auto header_accent = [&](const ImVec2& hmin, const ImVec2& hmax, const char* htitle, float alpha)
+			{
+				if (!child_title_font || alpha <= 0.01f || !htitle)
+					return;
+
+				const ImVec2 tsize = child_title_font->CalcTextSizeA(15.0f, FLT_MAX, 0.0f, htitle);
+				const float cy = hmin.y + (child_header_height - tsize.y) * 0.5f;
+
+				draw_list->AddRectFilled(
+					ImVec2(hmin.x + SCALE(6.0f), cy - SCALE(5.0f)),
+					ImVec2(hmin.x + SCALE(15.0f), cy + tsize.y + SCALE(5.0f)),
+					IM_COL32(143, 200, 255, (int)(55 * alpha)),
+					SCALE(3.0f));
+
+				draw_list->AddRectFilled(
+					ImVec2(hmin.x + SCALE(9.0f), cy - SCALE(2.0f)),
+					ImVec2(hmin.x + SCALE(12.0f), cy + tsize.y + SCALE(2.0f)),
+					IM_COL32(143, 200, 255, (int)(235 * alpha)),
+					SCALE(1.5f));
+
+				draw_list->AddRectFilledMultiColor(
+					ImVec2(hmin.x, hmax.y - SCALE(1.0f)),
+					ImVec2(hmax.x, hmax.y),
+					IM_COL32(143, 200, 255, (int)(105 * alpha)),
+					IM_COL32(143, 200, 255, 0),
+					IM_COL32(143, 200, 255, 0),
+					IM_COL32(143, 200, 255, (int)(105 * alpha)));
+			};
+
+			if (var->gui.active_tab == 5 || var->gui.active_tab == 6)
+			{
+				float large_child_width = content_width;
+				float large_child_height = content_height;
+
+				ImVec2 child_pos = content_pos;
+				ImVec2 child_end = ImVec2(child_pos.x + large_child_width, child_pos.y + large_child_height);
+
+				float scale_progress = var->gui.tab_transition_alpha;
+				scale_progress = scale_progress * scale_progress;
+				float scale_effect = 0.85f + (scale_progress * 0.15f);
+
+				ImVec2 center = ImVec2((child_pos.x + child_end.x) * 0.5f, (child_pos.y + child_end.y) * 0.5f);
+				ImVec2 scaled_min = ImVec2(
+					center.x + (child_pos.x - center.x) * scale_effect,
+					center.y + (child_pos.y - center.y) * scale_effect
+				);
+				ImVec2 scaled_max = ImVec2(
+					center.x + (child_end.x - center.x) * scale_effect,
+					center.y + (child_end.y - center.y) * scale_effect
+				);
+
+				float shadow_blur = SCALE(8.0f);
+				for (int s = 0; s < 5; s++)
+				{
+					float progress = (float)s / 5.0f;
+					float alpha = (1.0f - progress) * 0.25f * var->gui.tab_transition_alpha;
+					float blur_amount = shadow_blur * progress;
+
+					ImVec2 shadow_min = ImVec2(scaled_min.x - blur_amount, scaled_min.y - blur_amount);
+					ImVec2 shadow_max = ImVec2(scaled_max.x + blur_amount, scaled_max.y + blur_amount);
+
+					draw_list->AddRectFilled(shadow_min, shadow_max, IM_COL32(0, 0, 0, (int)(alpha * 255)), SCALE(8.0f + blur_amount));
+				}
+
+				ImVec4 animated_child_bg_top = child_bg_top;
+				ImVec4 animated_child_bg_bottom = child_bg_bottom;
+				animated_child_bg_top.w *= var->gui.tab_transition_alpha;
+				animated_child_bg_bottom.w *= var->gui.tab_transition_alpha;
+
+				draw_list->PushClipRect(scaled_min, scaled_max, true);
+
+				draw_list->AddRectFilled(
+					scaled_min,
+					scaled_max,
+					draw->get_clr(animated_child_bg_bottom),
+					SCALE(8.0f)
+				);
+
+				draw_list->AddRectFilledMultiColor(
+					scaled_min,
+					scaled_max,
+					draw->get_clr(animated_child_bg_top),
+					draw->get_clr(animated_child_bg_top),
+					draw->get_clr(animated_child_bg_bottom),
+					draw->get_clr(animated_child_bg_bottom)
+				);
+
+				{
+					const float panel_a = var->gui.tab_transition_alpha;
+					draw_list->AddRectFilledMultiColor(
+						ImVec2(scaled_min.x + SCALE(8.0f), scaled_min.y),
+						ImVec2(scaled_max.x - SCALE(8.0f), scaled_min.y + SCALE(2.5f)),
+						IM_COL32(255, 255, 255, (int)(76 * panel_a)), IM_COL32(255, 255, 255, (int)(76 * panel_a)),
+						IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0));
+					draw_list->AddRect(scaled_min, scaled_max,
+						IM_COL32(255, 255, 255, (int)(20 * panel_a)),
+						SCALE(8.0f), 0, SCALE(1.0f));
+				}
+
+				draw_list->PopClipRect();
+
+				// Header
+				ImVec2 header_start = scaled_min;
+				ImVec2 header_end = ImVec2(scaled_max.x, scaled_min.y + child_header_height);
+
+				ImVec4 animated_header_top = child_header_top;
+				ImVec4 animated_header_bottom = child_header_bottom;
+				animated_header_top.w *= var->gui.tab_transition_alpha;
+				animated_header_bottom.w *= var->gui.tab_transition_alpha;
+
+				draw_list->PushClipRect(header_start, header_end, true);
+
+				draw_list->AddRectFilled(
+					header_start,
+					header_end,
+					draw->get_clr(animated_header_bottom),
+					SCALE(8.0f),
+					ImDrawFlags_RoundCornersTop
+				);
+
+				draw_list->AddRectFilledMultiColor(
+					header_start,
+					header_end,
+					draw->get_clr(animated_header_top),
+					draw->get_clr(animated_header_top),
+					draw->get_clr(animated_header_bottom),
+					draw->get_clr(animated_header_bottom)
+				);
+
+				draw_list->PopClipRect();
+
+				if (child_title_font)
+				{
+					gui->push_font(child_title_font);
+					const char* title = (var->gui.active_tab == 6) ? child_titles[6][0] : "settings";
+					header_accent(scaled_min, ImVec2(scaled_max.x, scaled_min.y + child_header_height), title, var->gui.tab_transition_alpha);
+					ImVec2 title_size = ImGui::CalcTextSize(title);
+					ImVec2 title_pos = ImVec2(scaled_min.x + SCALE(15.0f), scaled_min.y + (child_header_height - title_size.y) * 0.5f);
+
+					ImVec4 animated_accent = accent_color;
+					animated_accent.w *= var->gui.tab_transition_alpha;
+					draw_header_title(draw_list, child_title_font, 15.0f, title_pos, draw->get_clr(animated_accent), title, SCALE(1.5f));
+					gui->pop_font();
+					header_meta(scaled_min, ImVec2(scaled_max.x, scaled_min.y + child_header_height), var->gui.tab_transition_alpha,
+						(var->gui.active_tab == 6) ? "library" : "preferences");
+				}
+
+				float bottom_shadow_height = SCALE(10.0f);
+				for (int bs = 0; bs < 5; bs++)
+				{
+					float bs_progress = (float)bs / 5.0f;
+					float bs_alpha = (1.0f - bs_progress) * 0.35f * var->gui.tab_transition_alpha;
+
+					ImVec2 bs_start = ImVec2(scaled_min.x, header_end.y + (bottom_shadow_height * bs_progress));
+					ImVec2 bs_end = ImVec2(scaled_max.x, header_end.y + (bottom_shadow_height * (bs_progress + 0.2f)));
+
+					draw_list->AddRectFilledMultiColor(bs_start, bs_end,
+						IM_COL32(0, 0, 0, (int)(bs_alpha * 255)), IM_COL32(0, 0, 0, (int)(bs_alpha * 255)),
+						IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0));
+				}
+
+				// Clipping
+				draw_list->PushClipRect(scaled_min, scaled_max, true);
+
+				// Content area
+				float content_start_y = child_pos.y + child_header_height + SCALE(15.0f);
+				float content_area_height = large_child_height - child_header_height - SCALE(20.0f);
+				ImVec2 child_content_pos = ImVec2(child_pos.x, content_start_y);
+				ImVec2 child_content_size = ImVec2(large_child_width, content_area_height);
+
+				float scale_offset_x = scaled_min.x - child_pos.x;
+				float scale_offset_y = scaled_min.y - child_pos.y;
+
+				ImGui::SetCursorPos(ImVec2(child_content_pos.x - pos.x + scale_offset_x, child_content_pos.y - pos.y + scale_offset_y));
+
+				ImGui::PushStyleVar(ImGuiStyleVar_Alpha, var->gui.tab_transition_alpha);
+
+				ImGui::BeginChild("##child_settings", child_content_size, false, ImGuiWindowFlags_NoBackground);
+
+				if (var->gui.active_tab == 6)
+				{
+					// Music tab - Deezer browser
+					render_deezer_tab(child_content_size.x, child_content_size.y);
+				}
+				else
+				{
+				// Padding
+				ImGui::SetCursorPosX(SCALE(12.0f));
+
+				// UI Element Toggles
+				widgets->checkbox("show playerlist", &var->gui.show_playerlist);
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(4.0f));
+
+				ImGui::SetCursorPosX(SCALE(12.0f));
+				widgets->checkbox("show playerbar", &var->gui.show_playerbar);
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(4.0f));
+
+				ImGui::SetCursorPosX(SCALE(12.0f));
+				widgets->checkbox("show spotify player", &var->gui.show_spotify);
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(4.0f));
+
+				ImGui::SetCursorPosX(SCALE(12.0f));
+				widgets->checkbox("show active hotkeys", &var->gui.show_active_hotkeys);
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(4.0f));
+
+				ImGui::SetCursorPosX(SCALE(12.0f));
+				widgets->checkbox("show watermark", &var->gui.show_watermark);
+				}
+
+				ImGui::EndChild();
+
+				ImGui::PopStyleVar();  // Alpha
+
+				draw_list->PopClipRect();
+			}
+			else if (var->gui.active_tab == 4)
+			{
+				float large_child_width = content_width;
+				float large_child_height = content_height;
+
+				ImVec2 child_pos = content_pos;
+				ImVec2 child_end = ImVec2(child_pos.x + large_child_width, child_pos.y + large_child_height);
+
+				float scale_progress = var->gui.tab_transition_alpha;
+				scale_progress = scale_progress * scale_progress;
+				float scale_effect = 0.85f + (scale_progress * 0.15f);
+
+				ImVec2 center = ImVec2((child_pos.x + child_end.x) * 0.5f, (child_pos.y + child_end.y) * 0.5f);
+				ImVec2 scaled_min = ImVec2(
+					center.x + (child_pos.x - center.x) * scale_effect,
+					center.y + (child_pos.y - center.y) * scale_effect
+				);
+				ImVec2 scaled_max = ImVec2(
+					center.x + (child_end.x - center.x) * scale_effect,
+					center.y + (child_end.y - center.y) * scale_effect
+				);
+
+				float shadow_blur = SCALE(8.0f);
+				for (int s = 0; s < 5; s++)
+				{
+					float progress = (float)s / 5.0f;
+					float alpha = (1.0f - progress) * 0.25f * var->gui.tab_transition_alpha;
+					float blur_amount = shadow_blur * progress;
+
+					ImVec2 shadow_min = ImVec2(scaled_min.x - blur_amount, scaled_min.y - blur_amount);
+					ImVec2 shadow_max = ImVec2(scaled_max.x + blur_amount, scaled_max.y + blur_amount);
+
+					draw_list->AddRectFilled(shadow_min, shadow_max, IM_COL32(0, 0, 0, (int)(alpha * 255)), SCALE(8.0f + blur_amount));
+				}
+
+				ImVec4 animated_child_bg_top = child_bg_top;
+				ImVec4 animated_child_bg_bottom = child_bg_bottom;
+				animated_child_bg_top.w *= var->gui.tab_transition_alpha;
+				animated_child_bg_bottom.w *= var->gui.tab_transition_alpha;
+
+				draw_list->PushClipRect(scaled_min, scaled_max, true);
+
+				draw_list->AddRectFilled(
+					scaled_min,
+					scaled_max,
+					draw->get_clr(animated_child_bg_bottom),
+					SCALE(8.0f)
+				);
+
+				draw_list->AddRectFilledMultiColor(
+					scaled_min,
+					scaled_max,
+					draw->get_clr(animated_child_bg_top),
+					draw->get_clr(animated_child_bg_top),
+					draw->get_clr(animated_child_bg_bottom),
+					draw->get_clr(animated_child_bg_bottom)
+				);
+
+				{
+					const float panel_a = var->gui.tab_transition_alpha;
+					draw_list->AddRectFilledMultiColor(
+						ImVec2(scaled_min.x + SCALE(8.0f), scaled_min.y),
+						ImVec2(scaled_max.x - SCALE(8.0f), scaled_min.y + SCALE(2.5f)),
+						IM_COL32(255, 255, 255, (int)(76 * panel_a)), IM_COL32(255, 255, 255, (int)(76 * panel_a)),
+						IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0));
+					draw_list->AddRect(scaled_min, scaled_max,
+						IM_COL32(255, 255, 255, (int)(20 * panel_a)),
+						SCALE(8.0f), 0, SCALE(1.0f));
+				}
+
+				draw_list->PopClipRect();
+
+				// Header
+				ImVec2 header_start = scaled_min;
+				ImVec2 header_end = ImVec2(scaled_max.x, scaled_min.y + child_header_height);
+
+				ImVec4 animated_header_top = child_header_top;
+				ImVec4 animated_header_bottom = child_header_bottom;
+				animated_header_top.w *= var->gui.tab_transition_alpha;
+				animated_header_bottom.w *= var->gui.tab_transition_alpha;
+
+				draw_list->PushClipRect(header_start, header_end, true);
+
+				draw_list->AddRectFilled(
+					header_start,
+					header_end,
+					draw->get_clr(animated_header_bottom),
+					SCALE(8.0f),
+					ImDrawFlags_RoundCornersTop
+				);
+
+				draw_list->AddRectFilledMultiColor(
+					header_start,
+					header_end,
+					draw->get_clr(animated_header_top),
+					draw->get_clr(animated_header_top),
+					draw->get_clr(animated_header_bottom),
+					draw->get_clr(animated_header_bottom)
+				);
+
+				draw_list->PopClipRect();
+
+				if (child_title_font)
+				{
+					gui->push_font(child_title_font);
+					const char* title = "colors";
+					header_accent(scaled_min, ImVec2(scaled_max.x, scaled_min.y + child_header_height), title, var->gui.tab_transition_alpha);
+					ImVec2 title_size = ImGui::CalcTextSize(title);
+					ImVec2 title_pos = ImVec2(scaled_min.x + SCALE(15.0f), scaled_min.y + (child_header_height - title_size.y) * 0.5f);
+
+					ImVec4 animated_accent = accent_color;
+					animated_accent.w *= var->gui.tab_transition_alpha;
+					draw_header_title(draw_list, child_title_font, 15.0f, title_pos, draw->get_clr(animated_accent), title, SCALE(1.5f));
+					gui->pop_font();
+					header_meta(scaled_min, ImVec2(scaled_max.x, scaled_min.y + child_header_height), var->gui.tab_transition_alpha, "palette");
+				}
+
+				float bottom_shadow_height = SCALE(10.0f);
+				for (int bs = 0; bs < 5; bs++)
+				{
+					float bs_progress = (float)bs / 5.0f;
+					float bs_alpha = (1.0f - bs_progress) * 0.35f * var->gui.tab_transition_alpha;
+
+					ImVec2 bs_start = ImVec2(scaled_min.x, header_end.y + (bottom_shadow_height * bs_progress));
+					ImVec2 bs_end = ImVec2(scaled_max.x, header_end.y + (bottom_shadow_height * (bs_progress + 0.2f)));
+
+					draw_list->AddRectFilledMultiColor(bs_start, bs_end,
+						IM_COL32(0, 0, 0, (int)(bs_alpha * 255)), IM_COL32(0, 0, 0, (int)(bs_alpha * 255)),
+						IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0));
+				}
+
+				// Clipping
+				draw_list->PushClipRect(scaled_min, scaled_max, true);
+
+				// Content area
+				float content_start_y = child_pos.y + child_header_height + SCALE(15.0f);
+				float content_area_height = large_child_height - child_header_height - SCALE(20.0f);
+				ImVec2 child_content_pos = ImVec2(child_pos.x, content_start_y);
+				ImVec2 child_content_size = ImVec2(large_child_width, content_area_height);
+
+				float scale_offset_x = scaled_min.x - child_pos.x;
+				float scale_offset_y = scaled_min.y - child_pos.y;
+
+				ImGui::SetCursorPos(ImVec2(child_content_pos.x - pos.x + scale_offset_x, child_content_pos.y - pos.y + scale_offset_y));
+
+				ImGui::PushStyleVar(ImGuiStyleVar_Alpha, var->gui.tab_transition_alpha);
+
+				ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, SCALE(6.0f));
+				ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, IM_COL32(54, 56, 60, 210));
+				ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, IM_COL32(143, 200, 255, 255));
+				ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, IM_COL32(176, 220, 255, 255));
+				ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, IM_COL32(120, 182, 245, 255));
+				ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarRounding, SCALE(4.0f));
+
+				ImGui::BeginChild("##child_colors", child_content_size, false, ImGuiWindowFlags_NoBackground);
+
+				// Padding
+				ImGui::SetCursorPosX(SCALE(12.0f));
+
+				const char* color_labels[] = {
+					"crosshair color", "fov circle", "target lock", "hit marker",
+					"box esp", "name esp", "health bar", "distance",
+					"chams visible", "chams hidden", "chams team", "chams local",
+					"enemy glow", "team glow", "item glow",
+					"accent color", "success color", "warning color", "error color", "info color"
+				};
+
+				for (int i = 0; i < 20; i++)
+				{
+					ImGui::SetCursorPosX(SCALE(12.0f));
+					widgets->color_picker(color_labels[i], test_colors[4][i]);
+
+					if (i < 19)
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(4.0f));
+				}
+
+				ImGui::EndChild();
+
+				ImGui::PopStyleVar(3);  // ScrollbarSize, ScrollbarRounding, Alpha
+				ImGui::PopStyleColor(4);  // Scrollbar Colors
+
+				draw_list->PopClipRect();
+			}
+			else if (var->gui.active_tab == 5)
+			{
+			}
+			else
+			{
+				static int section_sel[4] = { 0, 0, 0, 0 };
+				const int sec_tab = var->gui.active_tab;
+				int child_index = section_sel[sec_tab];
+
+				float rail_w = SCALE(136.0f);
+				float rail_gap = SCALE(14.0f);
+				float panel_x = content_pos.x + rail_w + rail_gap;
+				float panel_w = content_width - rail_w - rail_gap;
+
+				ImVec2 child_pos = ImVec2(panel_x, content_pos.y);
+				ImVec2 child_end = ImVec2(panel_x + panel_w, content_pos.y + content_height);
+
+				// section rail
+				{
+					const float rail_a = var->gui.tab_transition_alpha;
+					ImFont* rail_font = font->get(main_font_data, 13.0f);
+					const float item_h = SCALE(34.0f);
+					const float item_gap = SCALE(6.0f);
+					const float top_off = SCALE(26.0f);
+
+					draw_list->AddRectFilled(
+						ImVec2(content_pos.x, content_pos.y),
+						ImVec2(content_pos.x + rail_w, content_pos.y + content_height),
+						IM_COL32(255, 255, 255, (int)(11 * rail_a)),
+						SCALE(8.0f));
+					draw_list->AddRectFilledMultiColor(
+						ImVec2(content_pos.x + SCALE(6.0f), content_pos.y),
+						ImVec2(content_pos.x + rail_w - SCALE(6.0f), content_pos.y + SCALE(2.5f)),
+						IM_COL32(255, 255, 255, (int)(64 * rail_a)), IM_COL32(255, 255, 255, (int)(64 * rail_a)),
+						IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0));
+					draw_list->AddRect(
+						ImVec2(content_pos.x, content_pos.y),
+						ImVec2(content_pos.x + rail_w, content_pos.y + content_height),
+						IM_COL32(255, 255, 255, (int)(18 * rail_a)),
+						SCALE(8.0f), 0, SCALE(1.0f));
+
+					if (rail_font)
+					{
+						draw_list->AddText(rail_font, 11.0f,
+							ImVec2(content_pos.x + SCALE(4.0f), content_pos.y + SCALE(3.0f)),
+							IM_COL32(150, 155, 165, (int)(190 * rail_a)),
+							"sections");
+
+						static float item_hov[4] = { 0.0f };
+						static float item_on[4] = { 0.0f };
+
+						for (int s = 0; s < 4; s++)
+						{
+							ImVec2 rp0(content_pos.x, content_pos.y + top_off + s * (item_h + item_gap));
+							ImVec2 rp1(rp0.x + rail_w, rp0.y + item_h);
+
+							const bool hov = IsMouseHoveringRect(rp0, rp1, false) && rail_a > 0.6f;
+							const bool on = (s == child_index);
+
+							gui->easing(item_hov[s], hov ? 1.0f : 0.0f, 14.0f, dynamic_easing);
+							gui->easing(item_on[s], on ? 1.0f : 0.0f, 14.0f, dynamic_easing);
+
+							if (hov && gui->mouse_clicked(0, false) && gui->is_window_hovered(ImGuiHoveredFlags_None))
+							{
+								section_sel[sec_tab] = s;
+								child_index = s;
+								var->gui.tab_transition_alpha = 0.0f;
+							}
+
+							const float sel = item_on[s];
+							const float hovs = item_hov[s] * (1.0f - sel);
+
+							draw_list->AddRectFilled(rp0, rp1,
+								IM_COL32(255, 255, 255, (int)((8 + 14 * hovs) * rail_a)),
+								SCALE(6.0f));
+
+							if (sel > 0.01f)
+							{
+								draw_list->AddRectFilled(rp0, rp1,
+									IM_COL32(201, 168, 255, (int)(36 * sel * rail_a)),
+									SCALE(6.0f));
+
+								draw_list->AddRectFilled(
+									ImVec2(rp0.x, rp0.y + SCALE(6.0f)),
+									ImVec2(rp0.x + SCALE(2.5f), rp1.y - SCALE(6.0f)),
+									IM_COL32(201, 168, 255, (int)(235 * sel * rail_a)),
+									SCALE(1.5f));
+							}
+
+							draw_list->AddRect(rp0, rp1,
+								IM_COL32(255, 255, 255, (int)((10 + 26 * sel) * rail_a)),
+								SCALE(6.0f), 0, SCALE(1.0f));
+
+							const char* sname = child_titles[sec_tab][s];
+							ImVec2 tsz = rail_font->CalcTextSizeA(13.0f, FLT_MAX, 0.0f, sname);
+							ImVec2 tpos = ImVec2(rp0.x + SCALE(12.0f), rp0.y + (item_h - tsz.y) * 0.5f);
+
+							const int g = (int)(150 + 60 * hovs);
+							draw_list->AddText(rail_font, 13.0f, tpos,
+								IM_COL32(
+									(int)(g + (214 - g) * sel),
+									(int)(g + (196 - g) * sel),
+									(int)((g + 10) + (255 - (g + 10)) * sel),
+									(int)(235 * rail_a)),
+								sname);
+						}
+					}
+				}
+
+					float scale_progress = var->gui.tab_transition_alpha;
+					scale_progress = scale_progress * scale_progress;
+
+					float scale_effect = 0.85f + (scale_progress * 0.15f);
+
+					ImVec2 center = ImVec2((child_pos.x + child_end.x) * 0.5f, (child_pos.y + child_end.y) * 0.5f);
+					ImVec2 scaled_min = ImVec2(
+						center.x + (child_pos.x - center.x) * scale_effect,
+						center.y + (child_pos.y - center.y) * scale_effect
+					);
+					ImVec2 scaled_max = ImVec2(
+						center.x + (child_end.x - center.x) * scale_effect,
+						center.y + (child_end.y - center.y) * scale_effect
+					);
+
+					float shadow_blur = SCALE(8.0f);
+
+					for (int s = 0; s < 5; s++)
+					{
+						float progress = (float)s / 5.0f;
+						float alpha = (1.0f - progress) * 0.25f * var->gui.tab_transition_alpha;
+						float blur_amount = shadow_blur * progress;
+
+						ImVec2 shadow_min = ImVec2(scaled_min.x - blur_amount, scaled_min.y - blur_amount);
+						ImVec2 shadow_max = ImVec2(scaled_max.x + blur_amount, scaled_max.y + blur_amount);
+
+						draw_list->AddRectFilled(
+							shadow_min,
+							shadow_max,
+							IM_COL32(0, 0, 0, (int)(alpha * 255)),
+							SCALE(8.0f + blur_amount)
+						);
+					}
+
+					ImVec4 animated_child_bg_top = child_bg_top;
+					ImVec4 animated_child_bg_bottom = child_bg_bottom;
+					animated_child_bg_top.w *= var->gui.tab_transition_alpha;
+					animated_child_bg_bottom.w *= var->gui.tab_transition_alpha;
+
+					draw_list->PushClipRect(scaled_min, scaled_max, true);
+
+					draw_list->AddRectFilled(
+						scaled_min,
+						scaled_max,
+						draw->get_clr(animated_child_bg_bottom),
+						SCALE(8.0f)
+					);
+
+					draw_list->AddRectFilledMultiColor(
+						scaled_min,
+						scaled_max,
+						draw->get_clr(animated_child_bg_top),
+						draw->get_clr(animated_child_bg_top),
+						draw->get_clr(animated_child_bg_bottom),
+						draw->get_clr(animated_child_bg_bottom)
+					);
+
+					{
+						const float panel_a = var->gui.tab_transition_alpha;
+						draw_list->AddRectFilledMultiColor(
+							ImVec2(scaled_min.x + SCALE(8.0f), scaled_min.y),
+							ImVec2(scaled_max.x - SCALE(8.0f), scaled_min.y + SCALE(2.5f)),
+							IM_COL32(255, 255, 255, (int)(76 * panel_a)), IM_COL32(255, 255, 255, (int)(76 * panel_a)),
+							IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0));
+						draw_list->AddRect(scaled_min, scaled_max,
+							IM_COL32(255, 255, 255, (int)(20 * panel_a)),
+							SCALE(8.0f), 0, SCALE(1.0f));
+					}
+
+					draw_list->PopClipRect();
+
+					ImVec2 header_start = scaled_min;
+					ImVec2 header_end = ImVec2(scaled_max.x, scaled_min.y + child_header_height);
+
+					float header_shadow_blur = SCALE(6.0f);
+					for (int hs = 0; hs < 4; hs++)
+					{
+						float hs_progress = (float)hs / 4.0f;
+						float hs_alpha = (1.0f - hs_progress) * 0.2f * var->gui.tab_transition_alpha;
+						float hs_blur = header_shadow_blur * hs_progress;
+
+						ImVec2 hs_min = ImVec2(header_start.x - hs_blur, header_start.y - hs_blur);
+						ImVec2 hs_max = ImVec2(header_end.x + hs_blur, header_end.y + hs_blur);
+
+						draw_list->AddRectFilled(
+							hs_min,
+							hs_max,
+							IM_COL32(0, 0, 0, (int)(hs_alpha * 255)),
+							SCALE(8.0f + hs_blur),
+							draw_flags_round_corners_top
+						);
+					}
+
+					ImVec4 animated_header_top = child_header_top;
+					ImVec4 animated_header_bottom = child_header_bottom;
+					animated_header_top.w *= var->gui.tab_transition_alpha;
+					animated_header_bottom.w *= var->gui.tab_transition_alpha;
+
+					draw_list->PushClipRect(header_start, header_end, true);
+
+					draw_list->AddRectFilled(
+						header_start,
+						header_end,
+						draw->get_clr(animated_header_bottom),
+						SCALE(8.0f),
+						ImDrawFlags_RoundCornersTop
+					);
+
+					draw_list->AddRectFilledMultiColor(
+						header_start,
+						header_end,
+						draw->get_clr(animated_header_top),
+						draw->get_clr(animated_header_top),
+						draw->get_clr(animated_header_bottom),
+						draw->get_clr(animated_header_bottom)
+					);
+
+					draw_list->PopClipRect();
+
+					if (child_title_font)
+					{
+						gui->push_font(child_title_font);
+
+						const char* title = child_titles[var->gui.active_tab][child_index];
+						header_accent(scaled_min, ImVec2(scaled_max.x, scaled_min.y + child_header_height), title, var->gui.tab_transition_alpha);
+						ImVec2 title_size = ImGui::CalcTextSize(title);
+						ImVec2 title_pos = ImVec2(
+							scaled_min.x + SCALE(15.0f),
+							scaled_min.y + (child_header_height - title_size.y) * 0.5f
+						);
+
+						ImVec4 animated_accent = accent_color;
+						animated_accent.w *= var->gui.tab_transition_alpha;
+						draw_header_title(draw_list, child_title_font, 15.0f, title_pos, draw->get_clr(animated_accent), title, SCALE(1.5f));
+
+						gui->pop_font();
+
+						char meta_buf[32];
+						sprintf_s(meta_buf, "section %d / 4", child_index + 1);
+						header_meta(scaled_min, ImVec2(scaled_max.x, scaled_min.y + child_header_height), var->gui.tab_transition_alpha, meta_buf);
+					}
+
+					float bottom_shadow_height = SCALE(10.0f);
+					for (int bs = 0; bs < 5; bs++)
+					{
+						float bs_progress = (float)bs / 5.0f;
+						float bs_alpha = (1.0f - bs_progress) * 0.35f * var->gui.tab_transition_alpha;
+
+						ImVec2 bs_start = ImVec2(scaled_min.x, header_end.y + (bottom_shadow_height * bs_progress));
+						ImVec2 bs_end = ImVec2(scaled_max.x, header_end.y + (bottom_shadow_height * (bs_progress + 0.2f)));
+
+						draw_list->AddRectFilledMultiColor(
+							bs_start,
+							bs_end,
+							IM_COL32(0, 0, 0, (int)(bs_alpha * 255)),
+							IM_COL32(0, 0, 0, (int)(bs_alpha * 255)),
+							IM_COL32(0, 0, 0, 0),
+							IM_COL32(0, 0, 0, 0)
+						);
+					}
+
+					draw_list->PushClipRect(scaled_min, scaled_max, true);
+
+					float content_start_y = child_pos.y + child_header_height + SCALE(15.0f);
+					float content_area_height = (child_end.y - child_pos.y) - child_header_height - SCALE(20.0f);
+
+					ImVec2 child_content_pos = ImVec2(child_pos.x, content_start_y);
+					ImVec2 child_content_size = ImVec2(child_end.x - child_pos.x, content_area_height);
+
+					float scale_offset_x = scaled_min.x - child_pos.x;
+					float scale_offset_y = scaled_min.y - child_pos.y;
+
+					ImGui::SetCursorPos(ImVec2(
+						child_content_pos.x - pos.x + scale_offset_x,
+						child_content_pos.y - pos.y + scale_offset_y
+					));
+
+					ImGui::PushStyleVar(ImGuiStyleVar_Alpha, var->gui.tab_transition_alpha);
+
+					char child_id[32];
+					sprintf_s(child_id, "##child_tab%d_%d", var->gui.active_tab, child_index);
+
+					ImGui::BeginChild(child_id, child_content_size, false, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar);
+
+					ImGui::SetCursorPosX(SCALE(12.0f));
+
+					if (var->gui.active_tab == 3)
+					{
+						// Config System Layout
+						if (child_index == 0 || child_index == 2)
+						{
+							ImGui::SetCursorPosX(SCALE(12.0f));
+
+							if (child_index == 0)  // Top-left: Config slots
+							{
+								// Config Slot Buttons
+								for (int i = 0; i < 5; i++)
+								{
+									ImGui::SetCursorPosX(SCALE(12.0f));
+
+								char slot_label[64];
+								const bool active_slot = (cfg_slot == i + 1);
+								sprintf_s(slot_label, "slot %d%s", i + 1, active_slot ? "   [active]" : "");
+
+								if (widgets->button(slot_label))
+								{
+									cfg_slot = i + 1;
+									write_boot_cfg(cfg_slot, cfg_auto_load);
+
+									char notify_text[128];
+									sprintf_s(notify_text, "slot %d selected", i + 1);
+									notify->add_notify(notify_text, info);
+								}
+
+									if (i < 4)
+										ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(6.0f));
+								}
+							}
+							else  // Bottom-left: Config management
+							{
+								// Config Management Buttons
+								ImGui::SetCursorPosX(SCALE(12.0f));
+								if (widgets->button("save config"))
+								{
+									const bool ok = save_config(cfg_slot);
+									notify->add_notify(ok ? "config saved" : "save failed", ok ? success : warning);
+								}
+
+								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(6.0f));
+								ImGui::SetCursorPosX(SCALE(12.0f));
+								if (widgets->button("load config"))
+								{
+									const bool ok = load_config(cfg_slot);
+									notify->add_notify(ok ? "config loaded" : "nothing to load", ok ? success : warning);
+								}
+
+								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(6.0f));
+								ImGui::SetCursorPosX(SCALE(12.0f));
+								if (widgets->button("delete config"))
+								{
+									delete_config(cfg_slot);
+									notify->add_notify("slot cleared", warning);
+								}
+
+								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(6.0f));
+								ImGui::SetCursorPosX(SCALE(12.0f));
+								if (widgets->button("reset to default"))
+								{
+									reset_defaults();
+									notify->add_notify("settings reset", info);
+								}
+							}
+						}
+						else
+						{
+							if (child_index == 1)  // Top-right: preferences
+							{
+								auto row = []() {
+									ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(8.0f));
+									ImGui::SetCursorPosX(SCALE(12.0f));
+								};
+
+								ImGui::SetCursorPosX(SCALE(12.0f));
+								widgets->checkbox("auto-load on startup", &cfg_auto_load);
+
+								row();
+								widgets->checkbox("save on exit", &cfg_save_on_exit);
+
+								row();
+								int slot_sel = cfg_slot - 1;
+								static const char* slot_items[] = { "slot 1", "slot 2", "slot 3", "slot 4", "slot 5" };
+								widgets->dropdown("default slot", &slot_sel, slot_items, 5);
+								cfg_slot = slot_sel + 1;
+
+								row();
+								widgets->checkbox("watermark", &var->gui.show_watermark);
+
+								row();
+								widgets->checkbox("active keybinds", &var->gui.show_active_hotkeys);
+							}
+							else  // Bottom-right: overlays + file transfer
+							{
+								auto row = []() {
+									ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(6.0f));
+									ImGui::SetCursorPosX(SCALE(12.0f));
+								};
+
+								ImGui::SetCursorPosX(SCALE(12.0f));
+								widgets->checkbox("player bar", &var->gui.show_playerbar);
+
+								row();
+								widgets->checkbox("player list", &var->gui.show_playerlist);
+
+								row();
+								widgets->checkbox("music player", &var->gui.show_spotify);
+
+								row();
+								if (widgets->button("export config"))
+								{
+									const bool ok = CopyFileA(config_path(cfg_slot).c_str(), export_path().c_str(), FALSE) != 0;
+									notify->add_notify(ok ? "exported to export.cfg" : "export failed", ok ? success : warning);
+								}
+
+								row();
+								if (widgets->button("import config"))
+								{
+									const bool ok = CopyFileA(export_path().c_str(), config_path(cfg_slot).c_str(), FALSE) != 0
+										&& load_config(cfg_slot);
+									notify->add_notify(ok ? "imported" : "nothing to import", ok ? success : warning);
+								}
+							}
+						}
+					}
+					else if (var->gui.active_tab == 4)
+					{
+						int color_start = child_index * 2;
+						for (int i = 0; i < 4; i++)
+						{
+							ImGui::SetCursorPosX(SCALE(12.0f));
+
+							char color_label[64];
+							sprintf_s(color_label, "color %d", color_start + i + 1);
+
+							widgets->color_picker(color_label, test_colors[var->gui.active_tab][color_start + i]);
+
+							if (i < 3)
+								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(4.0f));
+						}
+					}
+					else if (var->gui.active_tab == 5)
+					{
+						// Settings Tab - UI Element Toggles
+
+						ImGui::SetCursorPosX(SCALE(12.0f));
+						widgets->checkbox("show playerlist", &var->gui.show_playerlist);
+
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(8.0f));
+						ImGui::SetCursorPosX(SCALE(12.0f));
+						widgets->checkbox("show playerbar", &var->gui.show_playerbar);
+
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(8.0f));
+						ImGui::SetCursorPosX(SCALE(12.0f));
+						widgets->checkbox("show spotify player", &var->gui.show_spotify);
+
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(8.0f));
+						ImGui::SetCursorPosX(SCALE(12.0f));
+						widgets->checkbox("show active hotkeys", &var->gui.show_active_hotkeys);
+
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(8.0f));
+						ImGui::SetCursorPosX(SCALE(12.0f));
+						widgets->checkbox("show watermark", &var->gui.show_watermark);
+					}
+					else
+					{
+						// two-column body: controls left, binds + dropdowns right
+						const ImVec2 col_start_rel = ImGui::GetCursorPos();
+						const ImVec2 col_start_abs = ImGui::GetCursorScreenPos();
+						const float col_gap = SCALE(18.0f);
+						const float col_avail = ImGui::GetContentRegionAvail().x;
+						const float col_w = ImMax(SCALE(140.0f), (col_avail - col_gap) * 0.5f);
+						const float col_h = ImMax(SCALE(150.0f), ImGui::GetContentRegionAvail().y - SCALE(4.0f));
+
+						ImGui::BeginChild("##col_a", ImVec2(col_w, col_h), false, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar);
+						ImGui::SetCursorPosX(SCALE(12.0f));
+
+						int checkbox_start = child_index * 4;
+
+						ImVec2 kb_option1_pos = ImVec2(col_start_abs.x + col_w + col_gap, col_start_abs.y); // right column anchor
+
+						for (int i = 0; i < 3; i++)
+						{
+							ImGui::SetCursorPosX(SCALE(12.0f));
+
+							char checkbox_label[64];
+							sprintf_s(checkbox_label, "option %d", i + 1);
+
+							widgets->checkbox(checkbox_label, &test_checks[var->gui.active_tab][checkbox_start + i]);
+						}
+
+						{
+							static int   kb_key     = -1;
+							static int   kb_mode    = 0;
+							static bool  kb_act     = false;
+							static bool  kb_ctx     = false;
+							static ImVec2 kb_cp     = {};
+							static float  kb_anim   = 0.f;
+							static float  kb_hov_a  = 0.f;
+							static bool  kb_was_act = false;
+							static int   kb_owner   = -1;
+
+							const int kb_tab   = var->gui.active_tab;
+							const int kb_child = child_index;
+							const int kb_id    = kb_tab * 4 + kb_child;
+
+							// every panel owns its own bind - drop transient state on switch
+							if (kb_owner != kb_id)
+							{
+								kb_owner = kb_id;
+								kb_act = false;
+								kb_ctx = false;
+							}
+
+							kb_key  = bind_key[kb_tab][kb_child];
+							kb_mode = bind_mode[kb_tab][kb_child];
+
+							ImFont* kf = font->get(main_font_data, 12.0f);
+							if (kf)
+							{
+								ImDrawList* dl = ImGui::GetForegroundDrawList();
+								ImGuiIO&    io = ImGui::GetIO();
+								float dt = ImMax(io.DeltaTime, 0.001f);
+
+								if (kb_act) kb_anim += dt * 3.f;
+								else        kb_anim  = 0.f;
+
+								// Key-Scan
+								if (kb_act)
+								{
+									if (!kb_was_act)
+									{
+										if (!GetAsyncKeyState(VK_LBUTTON) && !GetAsyncKeyState(VK_RBUTTON))
+											kb_was_act = true;
+									}
+									else
+									{
+										static bool prev_mouse[5] = {};
+										bool cur_mouse[5] = {
+											(GetAsyncKeyState(VK_LBUTTON)  & 0x8000) != 0,
+											(GetAsyncKeyState(VK_RBUTTON)  & 0x8000) != 0,
+											(GetAsyncKeyState(VK_MBUTTON)  & 0x8000) != 0,
+											(GetAsyncKeyState(VK_XBUTTON1) & 0x8000) != 0,
+											(GetAsyncKeyState(VK_XBUTTON2) & 0x8000) != 0,
+										};
+										int mouse_vks[5] = { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2 };
+
+										for (int m = 0; m < 5; m++)
+										{
+											// Edge: just pressed (false→true)
+											if (cur_mouse[m] && !prev_mouse[m])
+											{
+												kb_key = mouse_vks[m];
+												kb_act = false;
+												break;
+											}
+										}
+										for (int m=0;m<5;m++) prev_mouse[m] = cur_mouse[m];
+
+										// Keyboard via ImGui
+										if (kb_act)
+										{
+											static const struct { ImGuiKey ig; int vk; } km[] = {
+												{ImGuiKey_Escape,VK_ESCAPE},{ImGuiKey_Tab,VK_TAB},
+												{ImGuiKey_Backspace,VK_BACK},{ImGuiKey_Space,VK_SPACE},
+												{ImGuiKey_Enter,VK_RETURN},{ImGuiKey_Insert,VK_INSERT},
+												{ImGuiKey_Delete,VK_DELETE},{ImGuiKey_Home,VK_HOME},
+												{ImGuiKey_End,VK_END},{ImGuiKey_PageUp,VK_PRIOR},
+												{ImGuiKey_PageDown,VK_NEXT},{ImGuiKey_LeftArrow,VK_LEFT},
+												{ImGuiKey_RightArrow,VK_RIGHT},{ImGuiKey_UpArrow,VK_UP},
+												{ImGuiKey_DownArrow,VK_DOWN},
+												{ImGuiKey_LeftShift,VK_LSHIFT},{ImGuiKey_RightShift,VK_RSHIFT},
+												{ImGuiKey_LeftCtrl,VK_LCONTROL},{ImGuiKey_RightCtrl,VK_RCONTROL},
+												{ImGuiKey_LeftAlt,VK_LMENU},{ImGuiKey_RightAlt,VK_RMENU},
+												{ImGuiKey_F1,VK_F1},{ImGuiKey_F2,VK_F2},{ImGuiKey_F3,VK_F3},
+												{ImGuiKey_F4,VK_F4},{ImGuiKey_F5,VK_F5},{ImGuiKey_F6,VK_F6},
+												{ImGuiKey_F7,VK_F7},{ImGuiKey_F8,VK_F8},{ImGuiKey_F9,VK_F9},
+												{ImGuiKey_F10,VK_F10},{ImGuiKey_F11,VK_F11},{ImGuiKey_F12,VK_F12},
+												{ImGuiKey_CapsLock,VK_CAPITAL},{ImGuiKey_NumLock,VK_NUMLOCK},
+												{ImGuiKey_0,'0'},{ImGuiKey_1,'1'},{ImGuiKey_2,'2'},
+												{ImGuiKey_3,'3'},{ImGuiKey_4,'4'},{ImGuiKey_5,'5'},
+												{ImGuiKey_6,'6'},{ImGuiKey_7,'7'},{ImGuiKey_8,'8'},{ImGuiKey_9,'9'},
+												{ImGuiKey_A,'A'},{ImGuiKey_B,'B'},{ImGuiKey_C,'C'},{ImGuiKey_D,'D'},
+												{ImGuiKey_E,'E'},{ImGuiKey_F,'F'},{ImGuiKey_G,'G'},{ImGuiKey_H,'H'},
+												{ImGuiKey_I,'I'},{ImGuiKey_J,'J'},{ImGuiKey_K,'K'},{ImGuiKey_L,'L'},
+												{ImGuiKey_M,'M'},{ImGuiKey_N,'N'},{ImGuiKey_O,'O'},{ImGuiKey_P,'P'},
+												{ImGuiKey_Q,'Q'},{ImGuiKey_R,'R'},{ImGuiKey_S,'S'},{ImGuiKey_T,'T'},
+												{ImGuiKey_U,'U'},{ImGuiKey_V,'V'},{ImGuiKey_W,'W'},{ImGuiKey_X,'X'},
+												{ImGuiKey_Y,'Y'},{ImGuiKey_Z,'Z'},
+												{ImGuiKey_Keypad0,VK_NUMPAD0},{ImGuiKey_Keypad1,VK_NUMPAD1},
+												{ImGuiKey_Keypad2,VK_NUMPAD2},{ImGuiKey_Keypad3,VK_NUMPAD3},
+												{ImGuiKey_Keypad4,VK_NUMPAD4},{ImGuiKey_Keypad5,VK_NUMPAD5},
+												{ImGuiKey_Keypad6,VK_NUMPAD6},{ImGuiKey_Keypad7,VK_NUMPAD7},
+												{ImGuiKey_Keypad8,VK_NUMPAD8},{ImGuiKey_Keypad9,VK_NUMPAD9},
+											};
+											for (auto& e : km)
+											{
+												if (ImGui::IsKeyPressed(e.ig, false))
+												{
+													kb_key = (e.ig == ImGuiKey_Escape) ? -1 : e.vk;
+													kb_act = false;
+													break;
+												}
+											}
+										}
+									}
+								}
+								else
+								{
+									kb_was_act = false;
+								}
+
+								// Key Name
+								char buf[128] = {};
+								if (kb_key <= 0) {
+									strcpy_s(buf, "None");
+								} else {
+									switch (kb_key) {
+									case VK_LBUTTON:  strcpy_s(buf,"M1");  break;
+									case VK_RBUTTON:  strcpy_s(buf,"M2");  break;
+									case VK_MBUTTON:  strcpy_s(buf,"M3");  break;
+									case VK_XBUTTON1: strcpy_s(buf,"M4");  break;
+									case VK_XBUTTON2: strcpy_s(buf,"M5");  break;
+									case VK_INSERT:   strcpy_s(buf,"Ins"); break;
+									case VK_DELETE:   strcpy_s(buf,"Del"); break;
+									default: {
+										UINT sc = MapVirtualKeyA(kb_key, MAPVK_VK_TO_VSC);
+										switch(kb_key){
+											case VK_LEFT: case VK_UP: case VK_RIGHT: case VK_DOWN:
+											case VK_RCONTROL: case VK_RMENU: case VK_PRIOR: case VK_NEXT:
+											case VK_END: case VK_HOME: sc |= KF_EXTENDED; break;
+										}
+										if (!GetKeyNameTextA(sc << 16, buf, 128) || !buf[0])
+											sprintf_s(buf, "K%d", kb_key);
+										if (buf[0]) buf[0] = toupper((unsigned char)buf[0]);
+										for (int c=1;buf[c];c++) buf[c]=tolower((unsigned char)buf[c]);
+									} break;
+									}
+								}
+
+								ImVec2 tsz = kf->CalcTextSizeA(12.f, FLT_MAX, 0, buf);
+								float  bw  = ImMax(SCALE(38.f), tsz.x + SCALE(16.f));
+								float  bh  = SCALE(18.f);
+								float  chk_h = SCALE(31.f);
+
+								ImVec2 bp = ImVec2(
+									kb_option1_pos.x + (ImGui::GetWindowSize().x - SCALE(24.f)) - bw,
+									kb_option1_pos.y + (chk_h - bh) * 0.5f + SCALE(6.f)
+								);
+								ImRect br(bp, ImVec2(bp.x + bw, bp.y + bh));
+								bool   hov = br.Contains(ImGui::GetMousePos());
+
+								// Hover anim
+								kb_hov_a += ((hov ? 1.f : 0.f) - kb_hov_a) * ImMin(dt * 15.f, 1.f);
+
+								// Shadow
+								for (int s=0;s<4;s++) {
+									float p=(float)s/4.f, bl=SCALE(8.f)*p;
+									dl->AddRectFilled(
+										ImVec2(bp.x-bl,bp.y-bl), ImVec2(bp.x+bw+bl,bp.y+bh+bl),
+										IM_COL32(0,0,0,(int)((1-p)*45*(1.f+kb_hov_a*0.6f))), SCALE(4.f));
+								}
+
+								dl->AddRectFilled(ImVec2(bp.x+1,bp.y+1),ImVec2(bp.x+bw,bp.y+bh),IM_COL32(46,48,52,190),SCALE(4.f));
+								ImU32 bgc = IM_COL32((int)(18+kb_hov_a*8),(int)(18+kb_hov_a*6),(int)(22+kb_hov_a*10),240);
+								dl->AddRectFilled(br.Min,br.Max,bgc,SCALE(4.f));
+
+								float ba = kb_act ? 0.25f : (0.12f + kb_hov_a * 0.28f);
+								dl->AddRect(br.Min,br.Max,IM_COL32(143,200,255,(int)(ba*255)),SCALE(4.f),0,SCALE(1.f));
+
+								// Content
+								if (kb_act)
+								{
+									float cx = bp.x + bw * 0.5f;
+									float cy = bp.y + bh * 0.5f;
+									for (int d=0;d<3;d++) {
+										float phase  = kb_anim * 0.6f + d * 0.7f;
+										float palpha = 0.3f + 0.7f * (0.5f + 0.5f * sinf(phase * 0.8f));
+										float psize  = SCALE(2.0f);
+										dl->AddCircleFilled(
+											ImVec2(cx + (d-1) * SCALE(7.f), cy),
+											psize, IM_COL32(143,200,255,(int)(palpha*255)));
+									}
+								}
+								else
+								{
+									ImVec2 tp = ImVec2(bp.x+(bw-tsz.x)*0.5f, bp.y+(bh-SCALE(12.f))*0.5f);
+									dl->AddText(kf,12.f,tp,IM_COL32(130,130,138,255),buf);
+									if (kb_hov_a > 0.01f)
+										dl->AddText(kf,12.f,tp,IM_COL32(210,200,235,(int)(kb_hov_a*200)),buf);
+								}
+
+								if (hov && ImGui::IsMouseClicked(0) && !kb_act)
+									kb_act = true;
+								if (hov && ImGui::IsMouseClicked(1) && !kb_act)
+								{
+									kb_ctx = true;
+									kb_cp  = ImGui::GetMousePos();
+								}
+
+								// Context Menu
+								if (kb_ctx)
+								{
+									ImDrawList* fg = ImGui::GetForegroundDrawList();
+									const char* ml[3] = {"Hold","Toggle","Always On"};
+									float mih=SCALE(22.f), mw=SCALE(100.f), mh=mih*3+SCALE(4.f);
+									kb_cp.x=ImMin(kb_cp.x,io.DisplaySize.x-mw-4.f);
+									kb_cp.y=ImMin(kb_cp.y,io.DisplaySize.y-mh-4.f);
+									ImRect mr(kb_cp,ImVec2(kb_cp.x+mw,kb_cp.y+mh));
+
+									for(int s=0;s<4;s++){float p=(float)s/4.f,bl=SCALE(8.f)*p;fg->AddRectFilled(ImVec2(kb_cp.x-bl,kb_cp.y-bl),ImVec2(kb_cp.x+mw+bl,kb_cp.y+mh+bl),IM_COL32(0,0,0,(int)((1-p)*90)),SCALE(5.f));}
+									fg->AddRectFilled(mr.Min,mr.Max,IM_COL32(18,18,22,252),SCALE(5.f));
+									fg->AddRect(mr.Min,mr.Max,IM_COL32(143,200,255,40),SCALE(5.f),0,SCALE(1.f));
+
+									for (int m=0;m<3;m++) {
+										ImVec2 mp2=ImVec2(kb_cp.x, kb_cp.y+SCALE(2.f)+mih*m);
+										ImRect mri(mp2,ImVec2(mp2.x+mw,mp2.y+mih));
+										bool mhv=mri.Contains(ImGui::GetMousePos());
+										if(mhv) fg->AddRectFilled(mri.Min,mri.Max,IM_COL32(255,255,255,10),SCALE(4.f));
+										bool sel=(kb_mode==m);
+										ImVec2 msz=kf->CalcTextSizeA(12.f,FLT_MAX,0,ml[m]);
+										fg->AddText(kf,12.f,
+											ImVec2(mp2.x+(mw-msz.x)*0.5f,mp2.y+(mih-SCALE(12.f))*0.5f),
+											sel?IM_COL32(143,200,255,255):(mhv?IM_COL32(220,218,230,255):IM_COL32(160,160,168,200)),
+											ml[m]);
+										if(mhv&&ImGui::IsMouseClicked(0)){kb_mode=m;kb_ctx=false;}
+									}
+									if((ImGui::IsMouseClicked(0)||ImGui::IsMouseClicked(1))&&!mr.Contains(ImGui::GetMousePos()))
+										kb_ctx=false;
+								}
+							}
+
+							bind_key[kb_tab][kb_child]  = kb_key;
+							bind_mode[kb_tab][kb_child] = kb_mode;
+						}
+
+						// Spacing
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(8.0f));
+
+						int slider_start = child_index * 4;
+						for (int i = 0; i < 3; i++)  // 3 Slider
+						{
+							ImGui::SetCursorPosX(SCALE(12.0f));
+
+							char slider_label[64];
+							sprintf_s(slider_label, "slider %d", i + 1);
+
+							widgets->slider_int(slider_label, &test_sliders[var->gui.active_tab][slider_start + i], 0, 100);
+						}
+
+						ImGui::EndChild();  // col_a
+
+						ImGui::SetCursorPos(ImVec2(col_start_rel.x + col_w + col_gap, col_start_rel.y));
+						ImGui::BeginChild("##col_b", ImVec2(col_w, col_h), false, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar);
+						ImGui::SetCursorPosX(SCALE(12.0f));
+						ImGui::SetCursorPosY(SCALE(36.0f));
+
+						int dropdown_start = child_index * 4;
+						for (int i = 0; i < 4; i++)  // 4 Dropdowns
+						{
+							ImGui::SetCursorPosX(SCALE(12.0f));
+
+							char dropdown_label[64];
+							sprintf_s(dropdown_label, "dropdown %d", i + 1);
+
+							static const char* dropdown_items[] = { "Option A", "Option B", "Option C", "Option D" };
+							widgets->dropdown(dropdown_label, &test_dropdowns[var->gui.active_tab][dropdown_start + i], dropdown_items, 4);
+						}
+
+						// Spacing
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + SCALE(4.0f));
+
+						{
+							ImGui::SetCursorPosX(SCALE(12.0f));
+							widgets->slider_int("slider 4", &test_sliders[var->gui.active_tab][child_index * 4 + 3], 0, 100);
+						}
+
+						ImGui::EndChild();  // col_b
+
+						ImGui::SetCursorPos(ImVec2(col_start_rel.x, col_start_rel.y + col_h));
+					}
+
+					ImGui::EndChild();
+
+					ImGui::PopStyleVar();  // Alpha
+
+					draw_list->PopClipRect();
+			}
+
+			if (var->gui.active_tab == 1)
+			{
+				static bool esp_preview_open = true;
+
+				float toggle_button_width = SCALE(18.0f);
+				float toggle_button_height = SCALE(40.0f);
+
+				ImVec2 toggle_pos = ImVec2(
+					scaled_pos.x + scaled_size.x,
+					scaled_pos.y + tabbar_height + (content_height - toggle_button_height) * 0.5f
+				);
+				ImRect toggle_rect(toggle_pos, ImVec2(toggle_pos.x + toggle_button_width, toggle_pos.y + toggle_button_height));
+
+				bool toggle_hovered = IsMouseHoveringRect(toggle_rect.Min, toggle_rect.Max, false);
+				bool toggle_clicked = toggle_hovered && gui->mouse_clicked(0, false);
+
+				if (toggle_clicked)
+					esp_preview_open = !esp_preview_open;
+
+				// Toggle Button Animation
+				static float toggle_hover_alpha = 0.0f;
+				gui->easing(toggle_hover_alpha, toggle_hovered ? 1.0f : 0.0f, 20.0f, static_easing);
+
+				float btn_shadow_blur = SCALE(6.0f);
+				for (int s = 0; s < 5; s++)
+				{
+					float progress = (float)s / 5.0f;
+					float alpha = (1.0f - progress) * 0.25f * var->gui.menu_open_alpha;
+					float blur_amount = btn_shadow_blur * progress;
+
+					draw_list->AddRectFilled(
+						ImVec2(toggle_rect.Min.x - blur_amount, toggle_rect.Min.y - blur_amount),
+						ImVec2(toggle_rect.Max.x + blur_amount, toggle_rect.Max.y + blur_amount),
+						IM_COL32(0, 0, 0, (int)(alpha * 255)),
+						SCALE(6.0f) + blur_amount
+					);
+				}
+
+				ImVec4 btn_bg = ImVec4(64.0f / 255.0f, 66.0f / 255.0f, 70.0f / 255.0f, var->gui.menu_open_alpha);
+				draw_list->AddRectFilled(toggle_rect.Min, toggle_rect.Max, draw->get_clr(btn_bg), SCALE(6.0f));
+
+				if (toggle_hover_alpha > 0.01f || esp_preview_open)
+				{
+					float effect_alpha = esp_preview_open ? 1.0f : toggle_hover_alpha;
+					ImVec4 btn_accent = ImVec4(143.0f / 255.0f, 200.0f / 255.0f, 255.0f / 255.0f, 0.25f * effect_alpha * var->gui.menu_open_alpha);
+					draw_list->AddRectFilled(toggle_rect.Min, toggle_rect.Max, draw->get_clr(btn_accent), SCALE(6.0f));
+				}
+
+				// Icon: U+F05F (FontAwesome Crosshairs/Target)
+				ImFont* btn_font = font->get(main_font_data, 14.0f);
+				if (btn_font)
+				{
+					const char* icon = "\xEF\x81\x9F"; // U+F05F
+					ImVec2 icon_size = btn_font->CalcTextSizeA(14.0f, FLT_MAX, 0.0f, icon);
+					ImVec2 icon_pos = ImVec2(
+						toggle_rect.Min.x + (toggle_button_width - icon_size.x) * 0.5f,
+						toggle_rect.Min.y + (toggle_button_height - icon_size.y) * 0.5f
+					);
+
+					ImVec4 icon_color;
+					if (esp_preview_open)
+						icon_color = ImVec4(143.0f / 255.0f, 200.0f / 255.0f, 255.0f / 255.0f, var->gui.menu_open_alpha);
+					else if (toggle_hovered)
+						icon_color = ImVec4(0.85f, 0.85f, 0.9f, var->gui.menu_open_alpha);
+					else
+						icon_color = ImVec4(0.7f, 0.7f, 0.75f, var->gui.menu_open_alpha);
+
+					draw_list->AddText(btn_font, 14.0f, icon_pos, draw->get_clr(icon_color), icon);
+				}
+
+				// ESP Preview Box Animation
+				static float esp_preview_alpha = 0.0f;
+				gui->easing(esp_preview_alpha, esp_preview_open ? 1.0f : 0.0f, 8.0f, dynamic_easing);
+
+				if (esp_preview_alpha > 0.01f)
+				{
+					float preview_width = SCALE(300.0f);
+					float preview_height = content_height;
+					float spacing = SCALE(15.0f);
+					ImVec2 preview_pos = ImVec2(toggle_rect.Max.x + spacing, scaled_pos.y + tabbar_height);
+
+					// 3D Scale Animation
+					float preview_scale = 0.85f + (esp_preview_alpha * 0.15f);
+					ImVec2 preview_center = ImVec2(preview_pos.x + preview_width * 0.5f, preview_pos.y + preview_height * 0.5f);
+					ImVec2 preview_scaled_min = ImVec2(
+						preview_center.x + (preview_pos.x - preview_center.x) * preview_scale,
+						preview_center.y + (preview_pos.y - preview_center.y) * preview_scale
+					);
+					ImVec2 preview_scaled_max = ImVec2(
+						preview_center.x + ((preview_pos.x + preview_width) - preview_center.x) * preview_scale,
+						preview_center.y + ((preview_pos.y + preview_height) - preview_center.y) * preview_scale
+					);
+
+					float preview_shadow_blur = SCALE(12.0f);
+					for (int s = 0; s < 6; s++)
+					{
+						float progress = (float)s / 6.0f;
+						float alpha = (1.0f - progress) * 0.25f * esp_preview_alpha;
+						float blur_amount = preview_shadow_blur * progress;
+
+						draw_list->AddRectFilled(
+							ImVec2(preview_scaled_min.x - blur_amount, preview_scaled_min.y - blur_amount),
+							ImVec2(preview_scaled_max.x + blur_amount, preview_scaled_max.y + blur_amount),
+							IM_COL32(0, 0, 0, (int)(alpha * 255)),
+							SCALE(8.0f) + blur_amount
+						);
+					}
+
+					draw_list->PushClipRect(preview_scaled_min, preview_scaled_max, true);
+
+					ImVec4 preview_bg_top = ImVec4(66.0f / 255.0f, 68.0f / 255.0f, 72.0f / 255.0f, 0.62f * esp_preview_alpha);
+					ImVec4 preview_bg_bottom = ImVec4(46.0f / 255.0f, 48.0f / 255.0f, 52.0f / 255.0f, 0.62f * esp_preview_alpha);
+
+					draw_list->AddRectFilledMultiColor(
+						preview_scaled_min, preview_scaled_max,
+						draw->get_clr(preview_bg_top), draw->get_clr(preview_bg_top),
+						draw->get_clr(preview_bg_bottom), draw->get_clr(preview_bg_bottom)
+					);
+
+					for (int b = 0; b < 16; b++)
+					{
+						float blur_inset = SCALE(b * 0.8f);
+						float blur_alpha = 0.06f * esp_preview_alpha;
+
+						float brightness = (b % 2 == 0) ? 45.0f : 12.0f;
+						ImVec4 blur_color = ImVec4(brightness / 255.0f, brightness / 255.0f, (brightness + 5.0f) / 255.0f, blur_alpha);
+
+						ImVec2 blur_min = ImVec2(preview_scaled_min.x + blur_inset, preview_scaled_min.y + blur_inset);
+						ImVec2 blur_max = ImVec2(preview_scaled_max.x - blur_inset, preview_scaled_max.y - blur_inset);
+
+						draw_list->AddRectFilled(blur_min, blur_max, draw->get_clr(blur_color),
+							ImMax(SCALE(8.0f) - blur_inset, 0.0f));
+					}
+
+					draw_list->PopClipRect();
+
+					ImVec4 preview_border = ImVec4(143.0f / 255.0f, 200.0f / 255.0f, 255.0f / 255.0f, 0.15f * esp_preview_alpha);
+					draw_list->AddRect(preview_scaled_min, preview_scaled_max, draw->get_clr(preview_border), SCALE(8.0f), 0, SCALE(1.5f));
+
+					if (btn_font)
+					{
+						const char* header_text = "3d esp preview";
+						ImVec2 header_size = btn_font->CalcTextSizeA(13.0f, FLT_MAX, 0.0f, header_text);
+						ImVec2 header_pos = ImVec2(preview_scaled_min.x + SCALE(15.0f), preview_scaled_min.y + SCALE(15.0f));
+
+						ImVec4 header_color = ImVec4(143.0f / 255.0f, 200.0f / 255.0f, 255.0f / 255.0f, esp_preview_alpha);
+						draw_list->AddText(btn_font, 13.0f, header_pos, draw->get_clr(header_color), header_text);
+					}
+
+					{
+						const float a   = esp_preview_alpha;
+						ImVec2 pc = ImVec2(
+							(preview_scaled_min.x + preview_scaled_max.x) * 0.5f,
+							preview_scaled_min.y + (preview_scaled_max.y - preview_scaled_min.y) * 0.58f
+						);
+						float box_w = SCALE(74.0f);
+						float box_h = SCALE(150.0f);
+						ImVec2 bmin(pc.x - box_w * 0.5f, pc.y - box_h * 0.5f);
+						ImVec2 bmax(pc.x + box_w * 0.5f, pc.y + box_h * 0.5f);
+
+						// live box color comes from the colors tab
+						ImU32 col_box = IM_COL32(
+							(int)(ImClamp(test_colors[1][0][0], 0.0f, 1.0f) * 255.0f),
+							(int)(ImClamp(test_colors[1][0][1], 0.0f, 1.0f) * 255.0f),
+							(int)(ImClamp(test_colors[1][0][2], 0.0f, 1.0f) * 255.0f),
+							(int)(ImClamp(test_colors[1][0][3], 0.0f, 1.0f) * 255.0f * a));
+						ImU32 col_faint = (col_box & 0x00FFFFFF) | ((ImU32)(int)(26.0f * a) << 24);
+						ImU32 col_skel  = IM_COL32(236, 240, 246, (int)(215.0f * a));
+						ImU32 col_hp    = IM_COL32(76, 242, 76, (int)(235.0f * a));
+						ImU32 col_ap    = IM_COL32(143, 200, 255, (int)(235.0f * a));
+						ImU32 col_bg    = IM_COL32(14, 15, 18, (int)(190.0f * a));
+
+						// floor + aim point
+						draw_list->AddCircleFilled(ImVec2(pc.x, bmax.y), SCALE(16.0f), (col_bg & 0x00FFFFFF) | ((ImU32)(int)(90.0f * a) << 24), 24);
+						draw_list->AddLine(ImVec2(pc.x - SCALE(7.0f), pc.y), ImVec2(pc.x + SCALE(7.0f), pc.y), IM_COL32(143, 200, 255, (int)(150.0f * a)), SCALE(1.0f));
+						draw_list->AddLine(ImVec2(pc.x, pc.y - SCALE(7.0f)), ImVec2(pc.x, pc.y + SCALE(7.0f)), IM_COL32(143, 200, 255, (int)(150.0f * a)), SCALE(1.0f));
+
+						// skeleton
+						float y_sh = bmin.y + SCALE(30.0f);
+						float y_hip = bmin.y + SCALE(84.0f);
+						auto line = [&](ImVec2 p0, ImVec2 p1, ImU32 c, float w) {
+							draw_list->AddLine(p0, p1, c, w);
+						};
+						draw_list->AddCircle(ImVec2(pc.x, bmin.y + SCALE(13.0f)), SCALE(7.0f), col_skel, 16, SCALE(1.4f));
+						line(ImVec2(pc.x, bmin.y + SCALE(20.0f)), ImVec2(pc.x, y_sh), col_skel, SCALE(1.4f));
+						line(ImVec2(pc.x, y_sh), ImVec2(pc.x, y_hip), col_skel, SCALE(1.4f));
+						line(ImVec2(pc.x - SCALE(16.0f), y_sh), ImVec2(pc.x + SCALE(16.0f), y_sh), col_skel, SCALE(1.4f));
+						line(ImVec2(pc.x - SCALE(16.0f), y_sh), ImVec2(pc.x - SCALE(24.0f), bmin.y + SCALE(52.0f)), col_skel, SCALE(1.4f));
+						line(ImVec2(pc.x - SCALE(24.0f), bmin.y + SCALE(52.0f)), ImVec2(pc.x - SCALE(22.0f), bmin.y + SCALE(72.0f)), col_skel, SCALE(1.4f));
+						line(ImVec2(pc.x + SCALE(16.0f), y_sh), ImVec2(pc.x + SCALE(24.0f), bmin.y + SCALE(52.0f)), col_skel, SCALE(1.4f));
+						line(ImVec2(pc.x + SCALE(24.0f), bmin.y + SCALE(52.0f)), ImVec2(pc.x + SCALE(22.0f), bmin.y + SCALE(72.0f)), col_skel, SCALE(1.4f));
+						line(ImVec2(pc.x - SCALE(10.0f), y_hip), ImVec2(pc.x + SCALE(10.0f), y_hip), col_skel, SCALE(1.4f));
+						line(ImVec2(pc.x - SCALE(10.0f), y_hip), ImVec2(pc.x - SCALE(14.0f), bmin.y + SCALE(115.0f)), col_skel, SCALE(1.4f));
+						line(ImVec2(pc.x - SCALE(14.0f), bmin.y + SCALE(115.0f)), ImVec2(pc.x - SCALE(16.0f), bmax.y), col_skel, SCALE(1.4f));
+						line(ImVec2(pc.x + SCALE(10.0f), y_hip), ImVec2(pc.x + SCALE(14.0f), bmin.y + SCALE(115.0f)), col_skel, SCALE(1.4f));
+						line(ImVec2(pc.x + SCALE(14.0f), bmin.y + SCALE(115.0f)), ImVec2(pc.x + SCALE(16.0f), bmax.y), col_skel, SCALE(1.4f));
+
+						// bounding box with corner ticks
+						draw_list->AddRectFilled(bmin, bmax, col_faint, SCALE(3.0f));
+						draw_list->AddRect(bmin, bmax, col_box, SCALE(3.0f), 0, SCALE(1.5f));
+						float tick = SCALE(13.0f);
+						float tk = SCALE(2.2f);
+						ImU32 col_tick = IM_COL32(
+							(int)ImMin(255.0f, test_colors[1][0][0] * 255.0f + 60.0f),
+							(int)ImMin(255.0f, test_colors[1][0][1] * 255.0f + 60.0f),
+							(int)ImMin(255.0f, test_colors[1][0][2] * 255.0f + 60.0f),
+							(int)(255.0f * a));
+						{
+							ImVec2 c0 = bmin, c1 = bmax;
+							line(ImVec2(c0.x, c0.y), ImVec2(c0.x + tick, c0.y), col_tick, tk);
+							line(ImVec2(c0.x, c0.y), ImVec2(c0.x, c0.y + tick), col_tick, tk);
+							line(ImVec2(c1.x, c0.y), ImVec2(c1.x - tick, c0.y), col_tick, tk);
+							line(ImVec2(c1.x, c0.y), ImVec2(c1.x, c0.y + tick), col_tick, tk);
+							line(ImVec2(c0.x, c1.y), ImVec2(c0.x + tick, c1.y), col_tick, tk);
+							line(ImVec2(c0.x, c1.y), ImVec2(c0.x, c1.y - tick), col_tick, tk);
+							line(ImVec2(c1.x, c1.y), ImVec2(c1.x - tick, c1.y), col_tick, tk);
+							line(ImVec2(c1.x, c1.y), ImVec2(c1.x, c1.y - tick), col_tick, tk);
+						}
+
+						// health / armor rails
+						float hp = 0.78f, ap = 0.46f;
+						float bar_w = SCALE(3.5f);
+						ImVec2 hp_bg0 = ImVec2(bmin.x - SCALE(8.0f), bmin.y);
+						ImVec2 hp_bg1 = ImVec2(hp_bg0.x + bar_w, bmax.y);
+						draw_list->AddRectFilled(hp_bg0, hp_bg1, col_bg, SCALE(1.5f));
+						float hp_h = (bmax.y - bmin.y) * hp;
+						draw_list->AddRectFilled(ImVec2(hp_bg0.x, bmax.y - hp_h), hp_bg1, col_hp, SCALE(1.5f));
+
+						ImVec2 ap_bg0 = ImVec2(bmax.x + SCALE(5.0f), bmin.y);
+						ImVec2 ap_bg1 = ImVec2(ap_bg0.x + bar_w, bmax.y);
+						draw_list->AddRectFilled(ap_bg0, ap_bg1, col_bg, SCALE(1.5f));
+						float ap_h = (bmax.y - bmin.y) * ap;
+						draw_list->AddRectFilled(ImVec2(ap_bg0.x, bmax.y - ap_h), ap_bg1, col_ap, SCALE(1.5f));
+
+						// name plate + health readout
+						if (btn_font)
+						{
+							char nm[64];
+							sprintf_s(nm, "enemy  %d", (int)(hp * 100.0f));
+							ImVec2 nsz = btn_font->CalcTextSizeA(11.0f, FLT_MAX, 0.0f, nm);
+							ImVec2 npos = ImVec2(pc.x - nsz.x * 0.5f, bmin.y - SCALE(20.0f));
+							ImVec2 nb0 = ImVec2(npos.x - SCALE(6.0f), npos.y - SCALE(3.0f));
+							ImVec2 nb1 = ImVec2(npos.x + nsz.x + SCALE(6.0f), npos.y + nsz.y + SCALE(3.0f));
+							draw_list->AddRectFilled(nb0, nb1, col_bg, SCALE(3.0f));
+							draw_list->AddRect(nb0, nb1, (col_box & 0x00FFFFFF) | ((ImU32)(int)(120.0f * a) << 24), SCALE(3.0f), 0, SCALE(1.0f));
+							draw_list->AddText(btn_font, 11.0f, npos, IM_COL32(236, 240, 246, (int)(245.0f * a)), nm);
+
+							const char* wp = "ak-47   24m";
+							ImVec2 wsz = btn_font->CalcTextSizeA(10.0f, FLT_MAX, 0.0f, wp);
+							ImVec2 wpos = ImVec2(pc.x - wsz.x * 0.5f, bmax.y + SCALE(6.0f));
+							draw_list->AddText(btn_font, 10.0f, wpos, IM_COL32(143, 200, 255, (int)(200.0f * a)), wp);
+						}
+					}
+
+				}
+			}
+
+			ImGui::PopStyleVar();  // Menu Open Alpha
+		}
+		gui->end();
+	}
+	catch (...)
+	{
+		// Handle any exceptions silently
+	}
+
+	if (var->gui.playerlist_spawn_alpha > 0.001f)
+		playerlist->render();
+
+	if (var->gui.watermark_spawn_alpha > 0.001f)
+		watermark->render();
+
+	if (var->gui.active_hotkeys_spawn_alpha > 0.001f)
+	{
+		keybinds->render();
+	}
+
+	if (var->gui.playerbar_spawn_alpha > 0.001f)
+		playerbar->render();
+
+	if (var->gui.spotify_spawn_alpha > 0.001f)
+	{
+		musicplayer->update();
+		musicplayer->render();
+	}
+}

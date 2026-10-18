@@ -1,0 +1,387 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{86a42307-5037-4fb0-b863-92073e0d97d4}</ProjectGuid>
+    <RootNamespace>T4</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>Ivory</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <UseOfAtl>False</UseOfAtl>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <UseOfAtl>False</UseOfAtl>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <OutDir>$(ProjectDir)..\Build\</OutDir>
+    <IntDir>C:\IvoryBuild\</IntDir>
+    <TargetName>External</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <OutDir>$(ProjectDir)..\Build\</OutDir>
+    <IntDir>C:\IvoryBuild\</IntDir>
+    <TargetName>External</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(ProjectDir)..\Build\</OutDir>
+    <IntDir>C:\IvoryBuild\</IntDir>
+    <TargetName>External</TargetName>
+    <IncludePath>$(ProjectDir)source;$(ProjectDir)external;$(ProjectDir)external\Clipper2Lib\include;$(ProjectDir)external\freetype\include;$(ProjectDir)external\zstd\lib;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>C:\Users\ceram\AppData\Local\Temp\opencode\</OutDir>
+    <IntDir>C:\IvoryBuild\</IntDir>
+    <TargetName>payload_src</TargetName>
+    <LinkIncremental>false</LinkIncremental>
+    <IncludePath>$(ProjectDir)source;$(ProjectDir)external;$(ProjectDir)external\Clipper2Lib\include;$(ProjectDir)external\freetype\include;$(ProjectDir)external\zstd\lib;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <VcpkgUseStatic>true</VcpkgUseStatic>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <VcpkgUseStatic>true</VcpkgUseStatic>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;ZSTD_DISABLE_ASM;ZSTD_LEGACY_SUPPORT=0;XXH_NAMESPACE=ZSTD_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard_C>stdclatest</LanguageStandard_C>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>C:\IvoryBuild\$(TargetName).pdb</ProgramDatabaseFile>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;ZSTD_DISABLE_ASM;ZSTD_LEGACY_SUPPORT=0;XXH_NAMESPACE=ZSTD_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard_C>stdclatest</LanguageStandard_C>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>C:\IvoryBuild\$(TargetName).pdb</ProgramDatabaseFile>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;ZSTD_DISABLE_ASM;ZSTD_LEGACY_SUPPORT=0;XXH_NAMESPACE=ZSTD_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard_C>stdclatest</LanguageStandard_C>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalIncludeDirectories>$(ProjectDir)source;$(ProjectDir)external;$(ProjectDir)external\imgui;$(ProjectDir)external\Clipper2Lib\include;$(ProjectDir)external\freetype\include;$(ProjectDir)external\zstd\lib;$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>C:\IvoryBuild\$(TargetName).pdb</ProgramDatabaseFile>
+      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
+      <AdditionalLibraryDirectories>$(ProjectDir)external\freetype\objs\x64;C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64;%(AdditionalLibraryDirectories);C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64</AdditionalLibraryDirectories>
+      <AdditionalDependencies>d3d11.lib;freetype.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;ZSTD_DISABLE_ASM;ZSTD_LEGACY_SUPPORT=0;XXH_NAMESPACE=ZSTD_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard_C>stdclatest</LanguageStandard_C>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <StringPooling>true</StringPooling>
+      <AdditionalIncludeDirectories>$(ProjectDir)source;$(ProjectDir)external;$(ProjectDir)external\imgui;$(ProjectDir)external\Clipper2Lib\include;$(ProjectDir)external\freetype\include;$(ProjectDir)external\zstd\lib;$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>C:\IvoryBuild\$(TargetName).pdb</ProgramDatabaseFile>
+      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
+      <SubSystem>Windows</SubSystem>
+      <AdditionalLibraryDirectories>$(ProjectDir)external\freetype\objs\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>d3d11.lib;freetype.lib;dwmapi.lib;winhttp.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/NODEFAULTLIB:LIBCMT /NODEFAULTLIB:LIBCMTD %(AdditionalOptions)</AdditionalOptions>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+    </Link>
+    <PostBuildEvent>
+      <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)tools\harden_payload.ps1" -In "$(TargetPath)" -KeyHeader "C:\Users\ceram\AppData\Local\Temp\opencode\payload_key.h"</Command>
+      <Message>Stripping compiler fingerprint (DOS stub + Rich header)</Message>
+    </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)tools\make_stamp.ps1" -Out "$(ProjectDir)source\build_stamp.h"</Command>
+      <Message>Refreshing build stamp</Message>
+    </PreBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="external\Clipper2Lib\src\clipper.engine.cpp" />
+    <ClCompile Include="external\Clipper2Lib\src\clipper.offset.cpp" />
+    <ClCompile Include="external\Clipper2Lib\src\clipper.rectclip.cpp" />
+    <ClCompile Include="external\imgui\imgui.cpp" />
+    <ClCompile Include="external\imgui\imgui_draw.cpp" />
+    <ClCompile Include="external\imgui\imgui_tables.cpp" />
+    <ClCompile Include="external\imgui\imgui_impl_dx11.cpp" />
+    <ClCompile Include="external\imgui\imgui_impl_win32.cpp" />
+    <ClCompile Include="external\imgui\imgui_freetype.cpp" />
+    <ClCompile Include="external\imgui\clip.cpp" />
+    <ClCompile Include="external\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="external\imgui\addons\imgui_addons.cpp" />
+    <ClCompile Include="external\imgui\addons\imgui_notification.cpp" />
+    <ClCompile Include="source\sdk\cache\bodyparts\bodyparts.cpp" />
+    <ClCompile Include="source\sdk\cache\core\cache.cpp" />
+    <ClCompile Include="source\features\system\config\config.cpp">
+      <ObjectFileName>$(IntDir)features_config.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="source\features\system\keybind\keybind.cpp" />
+    <ClCompile Include="source\features\system\playerlist\playerlist.cpp">
+      <ObjectFileName>$(IntDir)features_playerlist.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="source\sdk\game\gamestate.cpp" />
+    <ClCompile Include="source\features\combat\aimbot\aimbot.cpp" />
+    <ClCompile Include="source\features\combat\trigger\trigger.cpp" />
+    <ClCompile Include="source\features\visuals\esp\esp.cpp" />
+    <ClCompile Include="source\features\visuals\geometry\wallcheck.cpp" />
+    <ClCompile Include="source\features\visuals\geometry\visualcheck.cpp" />
+    <ClCompile Include="source\main.cpp" />
+    <ClCompile Include="source\core\memory\memory.cpp" />
+    <ClCompile Include="source\core\utility\creator\creator.cpp" />
+    <ClCompile Include="source\core\utility\nvspinject\nvsp_manip_data.cpp" />
+    <ClCompile Include="source\features\system\playertools\avatars.cpp" />
+    <ClCompile Include="source\features\system\playertools\stb_image_impl.cpp" />
+    <ClCompile Include="source\features\system\playertools\playerops.cpp" />
+    <ClCompile Include="source\features\system\site\site.cpp" />
+    <ClCompile Include="source\core\protection\antidebug\antidebug.cpp" />
+    <ClCompile Include="source\core\protection\antiattach\antiattach.cpp" />
+    <ClCompile Include="source\core\protection\antidump\antidump.cpp" />
+    <ClCompile Include="source\ui\animations\animations.cpp" />
+    <ClCompile Include="source\ui\render\render.cpp" />
+    <ClCompile Include="source\\core\\scanner\\game\\game.cpp" />
+    <ClCompile Include="source\\core\\scanner\\process\\process.cpp" />
+    <ClCompile Include="source\sdk\sdk.cpp" />
+    <ClCompile Include="source\sdk\offsets\offsets.cpp" />
+    <ClCompile Include="source\features\exploits\utility\typingcheck\typingcheck.cpp" />
+    <ClCompile Include="source\features\mesh\assetmesh.cpp" />
+    <ClCompile Include="source\features\mesh\avatarmesh.cpp" />
+    <ClCompile Include="source\features\system\notifications\notifications.cpp" />
+    <ClCompile Include="source\features\system\performance\performance.cpp" />
+    <ClCompile Include="external\zstd\lib\common\debug.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="external\zstd\lib\common\entropy_common.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="external\zstd\lib\common\error_private.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="external\zstd\lib\common\fse_decompress.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="external\zstd\lib\common\xxhash.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="external\zstd\lib\common\zstd_common.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="external\zstd\lib\decompress\huf_decompress.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="external\zstd\lib\decompress\zstd_ddict.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="external\zstd\lib\decompress\zstd_decompress.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="external\zstd\lib\decompress\zstd_decompress_block.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</WholeProgramOptimization>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="external\Clipper2Lib\include\clipper2\clipper.core.h" />
+    <ClInclude Include="source\core\utility\creator\creator.h" />
+    <ClInclude Include="source\core\utility\nvspinject\NvspInject.hpp" />
+    <ClInclude Include="source\features\system\playertools\avatars.h" />
+    <ClInclude Include="source\features\system\playertools\playerops.h" />
+    <ClInclude Include="source\features\system\site\site.h" />
+    <ClInclude Include="source\core\utility\json\json.h" />
+    <ClInclude Include="source\core\utility\nvspinject\nvsp_manip_data.h" />
+    <ClInclude Include="source\features\combat\trigger\trigger.h" />
+    <ClInclude Include="external\Clipper2Lib\include\clipper2\clipper.engine.h" />
+    <ClInclude Include="external\Clipper2Lib\include\clipper2\clipper.export.h" />
+    <ClInclude Include="external\Clipper2Lib\include\clipper2\clipper.h" />
+    <ClInclude Include="external\Clipper2Lib\include\clipper2\clipper.minkowski.h" />
+    <ClInclude Include="external\Clipper2Lib\include\clipper2\clipper.offset.h" />
+    <ClInclude Include="external\Clipper2Lib\include\clipper2\clipper.rectclip.h" />
+    <ClInclude Include="external\Clipper2Lib\include\clipper2\clipper.version.h" />
+    <ClInclude Include="external\imgui\imconfig.h" />
+    <ClInclude Include="external\imgui\imgui.h" />
+    <ClInclude Include="external\imgui\imgui_impl_dx11.h" />
+    <ClInclude Include="external\imgui\imgui_impl_win32.h" />
+    <ClInclude Include="external\imgui\animation.h" />
+    <ClInclude Include="external\imgui\clip.h" />
+    <ClInclude Include="external\imgui\imgui_internal.h" />
+    <ClInclude Include="external\imgui\imstb_rectpack.h" />
+    <ClInclude Include="external\imgui\imstb_textedit.h" />
+    <ClInclude Include="external\imgui\imstb_truetype.h" />
+    <ClInclude Include="external\nlohmann\json.hpp" />
+    <ClInclude Include="external\stb\stb_image.h" />
+    <ClInclude Include="source\features\system\settings\settings.h" />
+    <ClInclude Include="source\sdk\cache\bodyparts.h" />
+    <ClInclude Include="source\sdk\cache\bodyparts\bodyparts.h" />
+    <ClInclude Include="source\sdk\cache\cache.h" />
+    <ClInclude Include="source\sdk\cache\core\cache.h" />
+    <ClInclude Include="source\features\combat\aimbot\aimbot.h" />
+    <ClInclude Include="source\features\system\config\config.h" />
+    <ClInclude Include="source\features\visuals\esp\esp.h" />
+    <ClInclude Include="source\features\system\keybind\keybind.h" />
+    <ClInclude Include="source\features\exploits\utility\typingcheck\typingcheck.h" />
+    <ClInclude Include="source\features\mesh\assetmesh.h" />
+    <ClInclude Include="source\features\mesh\avatarmesh.h" />
+    <ClInclude Include="source\features\system\playerlist\playerlist.h" />
+    <ClInclude Include="source\features\system\settings.h" />
+    <ClInclude Include="source\sdk\cache\core\frame.h" />
+    <ClInclude Include="source\sdk\game\game.h" />
+    <ClInclude Include="source\core\globals.h" />
+    <ClInclude Include="source\core\logger\logger.h" />
+    <ClInclude Include="source\core\memory\memory.h" />
+    <ClInclude Include="source\core\protection\antiattach\antiattach.h" />
+    <ClInclude Include="source\core\protection\antidebug\antidebug.h" />
+    <ClInclude Include="source\core\protection\protection.h" />
+    <ClInclude Include="source\core\protection\xorstr.h" />
+    <ClInclude Include="source\core\protection\encryption\xorstr.h" />
+    <ClInclude Include="source\core\protection\antidump\antidump.h" />
+    <ClInclude Include="source\sdk\offsets\rva.h" />
+    <ClInclude Include="source\ui\assets\dexicons.h" />
+    <ClInclude Include="source\ui\assets\fontexo2medium.h" />
+    <ClInclude Include="source\ui\assets\tabicon.h" />
+    <ClInclude Include="source\ui\assets\cursorbytes.h" />
+    <ClInclude Include="source\ui\assets\orokfonts.h" />
+    <ClInclude Include="source\ui\assets\smallestpixel7.h" />
+    <ClInclude Include="source\ui\animations\animations.h" />
+    <ClInclude Include="source\ui\render\render.h" />
+    <ClInclude Include="source\ui\menu\data\fonts.h" />
+    <ClInclude Include="source\ui\menu\data\images.h" />
+    <ClInclude Include="source\ui\menu\settings\colors.h" />
+    <ClInclude Include="source\ui\menu\settings\elements.h" />
+    <ClInclude Include="source\ui\menu\settings\functions.h" />
+    <ClInclude Include="source\ui\menu\settings\variables.h" />
+    <ClInclude Include="source\ui\menu\Menu.h" />
+    <ClInclude Include="source\ui\menu\assets\nav_icons.h" />
+    <ClInclude Include="source\ui\menu\assets\nav_bytes.h" />
+    <ClInclude Include="source\ui\menu\assets\font_main.h" />
+    <ClInclude Include="source\core\scanner\rescan.h" />
+    <ClInclude Include="source\sdk\math\math.h" />
+    <ClInclude Include="source\sdk\offsets\fflags.h" />
+    <ClInclude Include="source\sdk\offsets\offsets.h" />
+    <ClInclude Include="source\sdk\sdk.h" />
+    <ClInclude Include="source\features\system\performance\performance.h" />
+    <ClInclude Include="source\features\system\notifications\notifications.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="source\core\memory\luck.asm">
+      <FileType>Document</FileType>
+    </MASM>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="source\ui\assets\dexiconsloader.inc" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="source\ui\assets\icon\app.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
+  </ImportGroup>
+</Project>
